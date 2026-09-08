@@ -1,0 +1,5 @@
+streamlit==1.38.0
+requests==2.32.3
+pandas==2.2.2
+py3Dmol==2.4.2
+stmol==0.1.0

@@ -1,0 +1,5 @@
+Gene,Variante,Posicao,Troca,AlphaMissense_Class,ClinVar
+TNF,p.Gln25His,25,Glutamina por Histidina,Pathogenic,Patogênica
+TNF,p.Cys30Pro,30,Cisteína por Prolina,Pathogenic,Patogênica
+TNF,p.Leu45Ala,45,Leucina por Alanina,Benign,Benigna
+EGFR,p.Leu858Arg,858,Leucina por Arginina,Pathogenic,Patogênica
