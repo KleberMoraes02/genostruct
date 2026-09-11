@@ -113,14 +113,18 @@ if gene_buscado:
                                             st.error("Credencial SWISS-MODEL ausente. Insira o Token no menu lateral.")
                                         else:
                                             with st.spinner("Enviando requisição (POST) para o servidor..."):
-                                                headers = {"Authorization": f"Token {token_swiss}"}
+                                                token_limpo = token_swiss.strip()
+                                                headers = {
+                                                    "Authorization": f"Token {token_limpo}",
+                                                    "Content-Type": "application/json"
+                                                }
                                                 payload = {
                                                     "target_sequences": [sequencia_mutada],
                                                     "project_title": f"GenoStruct_{gene_buscado}_{mutacao_selecionada}"
                                                 }
 
                                                 try:
-                                                    url_swiss = "https://swissmodel.expasy.org/automodel/"
+                                                    url_swiss = "https://swissmodel.expasy.org/automodel"
                                                     resposta_swiss = requests.post(url_swiss, headers=headers, json=payload, timeout=15)
 
                                                     if resposta_swiss.status_code in [200, 202]:
