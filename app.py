@@ -24,7 +24,7 @@ MAPA_AMINOACIDOS = {
 @st.cache_data(show_spinner=False)
 def carregar_banco_mutacoes():
     try:
-        return pd.read_csv("banco_teste.csv")
+        return pd.read_csv("banco_teste.csv.gz")
     except FileNotFoundError:
         return pd.DataFrame()
 
