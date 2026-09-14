@@ -79,19 +79,21 @@ if gene_buscado:
 
                     st.success(f"Conexão estabelecida! Alvo: **{gene_buscado}** (Accession: {uniprot_id})")
 
-                    # DIVISÃO DA TELA (Colunas)
-                    coluna_esquerda, coluna_direita = st.columns([1.2, 1])
+                    # --- 1. PAINEL CLÍNICO (SUPERIOR - TELA CHEIA) ---
+                    st.subheader("📊 Perfil Mutacional Clínico")
+                    mutacoes_filtradas = df_mutacoes[df_mutacoes['Gene'].str.upper() == gene_buscado]
 
-                    # --- PAINEL CLÍNICO (ESQUERDA) ---
-                    with coluna_esquerda:
-                        st.subheader("📊 Perfil Mutacional Clínico")
-                        mutacoes_filtradas = df_mutacoes[df_mutacoes['Gene'].str.upper() == gene_buscado]
+                    if not mutacoes_filtradas.empty:
+                        # Tabela ocupa a tela toda
+                        st.dataframe(mutacoes_filtradas, use_container_width=True, hide_index=True)
 
-                        if not mutacoes_filtradas.empty:
-                            st.dataframe(mutacoes_filtradas, use_container_width=True, hide_index=True)
+                        st.markdown("---")
+                        
+                        # --- 2. PAINEL DE SIMULAÇÃO E 3D (INFERIOR - DIVIDIDO) ---
+                        col_controles, col_3d = st.columns([1.2, 1])
 
-                            st.markdown("---")
-                            st.markdown("**Simulação Estrutural**")
+                        with col_controles:
+                            st.subheader("⚙️ Configuração da Modelagem")
                             mutacao_selecionada = st.selectbox("Selecione uma variante para análise 3D:", mutacoes_filtradas['Variante'])
 
                             linha_selecionada = mutacoes_filtradas[mutacoes_filtradas['Variante'] == mutacao_selecionada]
@@ -104,8 +106,13 @@ if gene_buscado:
                                 aa_orig_1l = MAPA_AMINOACIDOS.get(aa_original_3l, '?')
                                 aa_mut_1l = MAPA_AMINOACIDOS.get(aa_mutado_3l, '?')
 
-                                # Trava de Segurança Biológica
-                                if posicao_mutacao <= len(sequencia_selvagem) and sequencia_selvagem[posicao_mutacao - 1] == aa_orig_1l:
+                                # Trava de Segurança Biológica (Aviso em vez de Bloqueio Rígido)
+                                if posicao_mutacao <= len(sequencia_selvagem):
+                                    aa_uniprot = sequencia_selvagem[posicao_mutacao - 1]
+                                    
+                                    if aa_uniprot != aa_orig_1l:
+                                        st.warning(f"⚠️ Alerta de Isoforma: A variante clínica espera '{aa_original_3l}' na posição {posicao_mutacao}, mas o UniProt possui '{aa_uniprot}'. A modelagem prosseguirá aplicando a mutação na sequência canônica atual.")
+                                    
                                     sequencia_mutada = sequencia_selvagem[:posicao_mutacao - 1] + aa_mut_1l + sequencia_selvagem[posicao_mutacao:]
 
                                     if st.button("🚀 Iniciar Modelagem por Homologia (SWISS-MODEL)", use_container_width=True):
@@ -113,7 +120,8 @@ if gene_buscado:
                                             st.error("Credencial SWISS-MODEL ausente. Insira o Token no menu lateral.")
                                         else:
                                             with st.spinner("Enviando requisição (POST) para o servidor..."):
-                                                token_limpo = token_swiss.strip()
+                                                # Filtro rigoroso para evitar UnicodeEncodeError
+                                                token_limpo = "".join(c for c in token_swiss if c.isalnum() or c == '-')
                                                 headers = {
                                                     "Authorization": f"Token {token_limpo}",
                                                     "Content-Type": "application/json"
@@ -127,7 +135,7 @@ if gene_buscado:
                                                     url_swiss = "https://swissmodel.expasy.org/automodel"
                                                     resposta_swiss = requests.post(url_swiss, headers=headers, json=payload, timeout=15)
 
-                                                    if resposta_swiss.status_code in [200, 202]:
+                                                    if resposta_swiss.status_code in [200, 201, 202]:
                                                         dados_projeto = resposta_swiss.json()
                                                         id_projeto = dados_projeto.get('project_id', 'Desconhecido')
                                                         st.success(f"Submissão autorizada! Job ID: {id_projeto}")
@@ -137,30 +145,29 @@ if gene_buscado:
                                                 except requests.exceptions.RequestException:
                                                     st.error("Falha de rede ao tentar conectar com a Suíça.")
                                 else:
-                                    st.error(f"Conflito Biológico: A variante indica um {aa_original_3l} na posição {posicao_mutacao}, divergindo da sequência canônica do UniProt.")
+                                    st.error("Erro: A posição da mutação excede o tamanho da proteína devolvida pelo UniProt.")
                             else:
                                 st.error("Erro de formatação na variante (esperado padrão p.XxxYYYzzz).")
-                        else:
-                            st.info("Nenhuma variante registrada para este alvo no banco de dados local.")
-                            posicao_mutacao = None
+                        
+                        with col_3d:
+                            st.subheader("🔬 Renderização Estrutural (AlphaFold DB)")
+                            if posicao_mutacao:
+                                with st.spinner("Baixando coordenadas atômicas PDB..."):
+                                    pdb_texto = buscar_pdb_alphafold(uniprot_id)
 
-                    # --- PAINEL ESTRUTURAL (DIREITA) ---
-                    with coluna_direita:
-                        st.subheader("🔬 Renderização Estrutural (AlphaFold DB)")
-                        if posicao_mutacao:
-                            with st.spinner("Baixando coordenadas atômicas PDB..."):
-                                pdb_texto = buscar_pdb_alphafold(uniprot_id)
+                                if pdb_texto:
+                                    st.caption(f"Visualizando modelo selvagem. Resíduo Mutado ({posicao_mutacao}) em vermelho.")
+                                    view = py3Dmol.view(width=450, height=450)
+                                    view.addModel(pdb_texto, 'pdb')
+                                    view.setStyle({'cartoon': {'color': 'lightgray'}})
+                                    view.setStyle({'resi': str(posicao_mutacao)}, {'stick': {'colorscheme': 'redCarbon', 'radius': 0.3}})
+                                    view.zoomTo()
+                                    showmol(view, height=450, width=450)
+                                else:
+                                    st.warning("Modelo estrutural primário indisponível no repositório AlphaFold.")
+                    else:
+                        st.info("Nenhuma variante registrada para este alvo no banco de dados local.")
 
-                            if pdb_texto:
-                                st.caption(f"Visualizando modelo selvagem. Resíduo Mutado ({posicao_mutacao}) em vermelho.")
-                                view = py3Dmol.view(width=450, height=450)
-                                view.addModel(pdb_texto, 'pdb')
-                                view.setStyle({'cartoon': {'color': 'lightgray'}})
-                                view.setStyle({'resi': str(posicao_mutacao)}, {'stick': {'colorscheme': 'redCarbon', 'radius': 0.3}})
-                                view.zoomTo()
-                                showmol(view, height=450, width=450)
-                            else:
-                                st.warning("Modelo estrutural primário indisponível no repositório AlphaFold.")
                 else:
                     st.error("⚠️ Alvo genômico não reconhecido nos repositórios oficiais.")
 
