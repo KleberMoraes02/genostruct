@@ -5,7 +5,7 @@ import py3Dmol
 from stmol import showmol
 import os
 import plotly.express as px
-import time # NOVO: Biblioteca para criar o "Loop de Espera" do robô
+import time
 
 # --- CONFIGURAÇÃO GLOBAL DA PÁGINA ---
 st.set_page_config(
@@ -78,7 +78,7 @@ if not df_mutacoes.empty:
             st.warning("⚠️ Digite um nome de gene válido.")
         else:
             with st.spinner("Sincronizando com UniProtKB..."):
-                try:
+                try: 
                     url = f"https://rest.uniprot.org/uniprotkb/search?query=gene:{gene_buscado} AND organism_id:9606 AND reviewed:true&format=json&size=1"
                     resposta = requests.get(url, timeout=10) 
 
@@ -96,7 +96,25 @@ if not df_mutacoes.empty:
                         st.subheader("📊 Perfil Mutacional Clínico")
 
                         with st.expander("📖 Dicionário de Colunas"):
-                            st.markdown("Guia de dados genômicos, clínicos e preditivos...") # (Ocultado no texto longo para focar no código)
+                            st.markdown("""
+                            Este guia explica os dados genômicos, clínicos e preditivos exibidos na tabela abaixo.
+                            
+                            **Identificação e Genética:**
+                            - **Gene:** Símbolo oficial aprovado pelo comitê HGNC.
+                            - **HGNC_ID:** Identificador numérico único do gene.
+                            - **UniProt_Accession:** Código do gene no banco mundial de proteínas (UniProt).
+                            - **rsID:** Identificador universal da variante no banco dbSNP.
+                            
+                            **Nomenclatura (Padrão HGVS):**
+                            - **HGVS_c:** Alteração no nível do DNA (sequência codificante).
+                            - **HGVS_p / Variante:** Alteração no nível da Proteína.
+                            - **Posicao:** A posição numérica exata do aminoácido afetado na cadeia proteica.
+                            
+                            **Predição e Relevância Clínica:**
+                            - **AlphaMissense_Class:** Inteligência artificial do Google DeepMind que prevê se a mutação é Patogênica, Benigna ou Ambígua.
+                            - **ClinVar:** Registro de relevância clínica real observada em pacientes médicos.
+                            - **Link_gnomAD:** Link direto para consultar a frequência da mutação na população mundial (banco gnomAD).
+                            """)
 
                         if not mutacoes_filtradas.empty:
                             todas_as_colunas = mutacoes_filtradas.columns.tolist()
@@ -148,9 +166,7 @@ if not df_mutacoes.empty:
                                     aa_orig_1l = MAPA_AMINOACIDOS.get(aa_original_3l, '?')
                                     aa_mut_1l = MAPA_AMINOACIDOS.get(aa_mutado_3l, '?')
 
-                                    # ==========================================
-                                    # NOVO: INTELIGÊNCIA BIOLÓGICA (UniProt Features)
-                                    # ==========================================
+                                    # INTELIGÊNCIA BIOLÓGICA (UniProt Features)
                                     is_peptideo_sinal = False
                                     for feature in mapa_funcional:
                                         tipo_alvo = feature.get('type', '')
@@ -178,9 +194,7 @@ if not df_mutacoes.empty:
                                         
                                         sequencia_mutada = sequencia_selvagem[:posicao_mutacao - 1] + aa_mut_1l + sequencia_selvagem[posicao_mutacao:]
 
-                                        # ==========================================
-                                        # NOVO: AUTOMAÇÃO DO SWISS-MODEL
-                                        # ==========================================
+                                        # AUTOMAÇÃO DO SWISS-MODEL
                                         if st.button("🚀 Iniciar Automação SWISS-MODEL", use_container_width=True):
                                             if not token_swiss:
                                                 st.error("Credencial SWISS-MODEL ausente no menu lateral.")
@@ -281,3 +295,13 @@ if not df_mutacoes.empty:
                                             file_name=f"AlphaFold_{uniprot_id}.pdb",
                                             mime="chemical/x-pdb",
                                         )
+
+                        # AQUI ESTÃO AS LINHAS QUE TINHAM SIDO CORTADAS:
+                        else:
+                            st.info("Nenhuma variante registrada no banco local para este gene.")
+                    else:
+                        st.error("⚠️ Alvo genômico não reconhecido nos repositórios oficiais.")
+                except requests.exceptions.RequestException:
+                    st.error("⚠️ Falha de comunicação de rede ao tentar contatar o UniProt.")
+else:
+    st.info("Arquivo de banco de dados não encontrado na pasta 'dados'.")
