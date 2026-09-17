@@ -5,6 +5,7 @@ import py3Dmol
 from stmol import showmol
 import os
 import plotly.express as px
+import time # NOVO: Biblioteca para criar o "Loop de Espera" do robô
 
 # --- CONFIGURAÇÃO GLOBAL DA PÁGINA ---
 st.set_page_config(
@@ -28,9 +29,7 @@ def carregar_banco_mutacoes():
     try:
         caminho = os.path.join("dados", "banco_teste.csv.gz")
         df = pd.read_csv(caminho)
-        
         df = df.replace('Sem registro clÃ­nico', 'Sem registro clínico')
-
         if all(col in df.columns for col in ['Chromosome', 'Position', 'Ref', 'Alt']):
             df['Link_gnomAD'] = "https://gnomad.broadinstitute.org/variant/" + \
                                 df['Chromosome'].astype(str) + "-" + \
@@ -59,14 +58,13 @@ def buscar_pdb_alphafold(uniprot_id):
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/3022/3022421.png", width=60)
     st.title("GenoStruct")
-    st.caption("v1.4.0 (Exportação e Gráficos Avançados)")
+    st.caption("v1.5.0 (IA Biológica e Automação)")
     st.markdown("---")
     st.markdown("**⚙️ Credenciais de Modelagem**")
     token_swiss = st.text_input("SWISS-MODEL API Token:", type="password")
 
 # --- CORPO PRINCIPAL DO SITE ---
 st.title("GenoStruct: Integração Genômica e Estrutural")
-st.markdown("Busque um gene para correlacionar variantes clínicas com predições estruturais.")
 
 df_mutacoes = carregar_banco_mutacoes()
 
@@ -77,7 +75,7 @@ if not df_mutacoes.empty:
 
     if gene_buscado:
         if len(gene_buscado) < 2:
-            st.warning("⚠️ Digite um nome de gene válido com pelo menos 2 letras.")
+            st.warning("⚠️ Digite um nome de gene válido.")
         else:
             with st.spinner("Sincronizando com UniProtKB..."):
                 try:
@@ -88,119 +86,58 @@ if not df_mutacoes.empty:
                         proteina = resposta.json()['results'][0]
                         uniprot_id = proteina['primaryAccession']
                         sequencia_selvagem = proteina['sequence']['value']
+                        
+                        # NOVO: EXTRAINDO MAPA DE CARACTERÍSTICAS DA PROTEÍNA
+                        mapa_funcional = proteina.get('features', [])
 
                         st.success(f"Conexão estabelecida! Alvo: **{gene_buscado}** (Accession: {uniprot_id})")
 
                         mutacoes_filtradas = df_mutacoes[df_mutacoes['Gene'].str.upper() == gene_buscado]
-
                         st.subheader("📊 Perfil Mutacional Clínico")
 
-                        with st.expander("📖 Dicionário de Colunas (Clique para expandir)"):
-                            st.markdown("""
-                            Este guia explica os dados genômicos, clínicos e preditivos.
-                            - **Gene:** Símbolo oficial aprovado pelo comitê HGNC.
-                            - **HGVS_p / Variante:** Alteração no nível da Proteína.
-                            - **Posicao:** Posição exata do aminoácido afetado.
-                            - **AlphaMissense_Class:** Inteligência artificial do Google DeepMind (Patogênica, Benigna ou Ambígua).
-                            - **ClinVar:** Registro de relevância clínica real observada em pacientes.
-                            - **Link_gnomAD:** Link direto para consultar a frequência da mutação mundialmente.
-                            """)
+                        with st.expander("📖 Dicionário de Colunas"):
+                            st.markdown("Guia de dados genômicos, clínicos e preditivos...") # (Ocultado no texto longo para focar no código)
 
                         if not mutacoes_filtradas.empty:
                             todas_as_colunas = mutacoes_filtradas.columns.tolist()
                             colunas_padrao = ['Gene', 'Variante', 'Posicao', 'Troca', 'AlphaMissense_Class', 'ClinVar', 'Link_gnomAD']
                             colunas_padrao = [c for c in colunas_padrao if c in todas_as_colunas]
 
-                            colunas_selecionadas = st.multiselect(
-                                "Selecione as colunas:",
-                                options=todas_as_colunas,
-                                default=colunas_padrao
-                            )
-
+                            colunas_selecionadas = st.multiselect("Selecione as colunas:", options=todas_as_colunas, default=colunas_padrao)
                             df_exibicao = mutacoes_filtradas[colunas_selecionadas]
                             
                             configuracao_colunas = {}
                             if 'Link_gnomAD' in df_exibicao.columns:
-                                configuracao_colunas['Link_gnomAD'] = st.column_config.LinkColumn("🔗 Frequência (gnomAD)", display_text="Ver Variante")
-
+                                configuracao_colunas['Link_gnomAD'] = st.column_config.LinkColumn("🔗 Frequência", display_text="Ver Variante")
                             st.dataframe(df_exibicao, use_container_width=True, hide_index=True, column_config=configuracao_colunas)
                             
-                            # ==========================================
-                            # NOVO: BOTÃO DE DOWNLOAD DA TABELA (TSV)
-                            # ==========================================
-                            # Converte a tabela filtrada para CSV separado por TAB (.tsv)
                             csv_data = df_exibicao.to_csv(sep='\t', index=False).encode('utf-8')
-                            st.download_button(
-                                label="📥 Exportar Tabela Curada (.tsv)",
-                                data=csv_data,
-                                file_name=f"GenoStruct_{gene_buscado}_variantes.tsv",
-                                mime="text/tsv",
-                            )
-                            # ==========================================
+                            st.download_button("📥 Exportar Tabela Curada (.tsv)", data=csv_data, file_name=f"GenoStruct_{gene_buscado}_variantes.tsv", mime="text/tsv")
 
                             st.markdown("---")
                             
-                            # ==========================================
-                            # NOVO: GRÁFICO DE DISPERSÃO (Substituto do Lollipop)
-                            # ==========================================
+                            # GRÁFICO DE DISPERSÃO
                             st.subheader("📍 Paisagem Mutacional (Mapeamento de Patogenicidade)")
                             if 'AlphaMissense_Class' in mutacoes_filtradas.columns and 'Posicao' in mutacoes_filtradas.columns:
-                                cores_am = {
-                                    'likely_pathogenic': '#ff4b4b',
-                                    'likely_benign': '#1f77b4',
-                                    'ambiguous': '#ffc107',
-                                    'Não disponível': '#d3d3d3'
-                                }
-                                
-                                # Gráfico Scatter: Eixo X é a posição da proteína, Eixo Y é a Classificação
-                                fig_scatter = px.scatter(
-                                    mutacoes_filtradas, 
-                                    x='Posicao', 
-                                    y='AlphaMissense_Class', 
-                                    color='AlphaMissense_Class',
-                                    color_discrete_map=cores_am,
-                                    hover_data=['Variante', 'Troca', 'ClinVar'], # O que aparece ao passar o mouse
-                                    title=f"Distribuição de Variantes ao longo da proteína {gene_buscado}",
-                                    labels={'Posicao': 'Posição do Aminoácido', 'AlphaMissense_Class': 'Predição AlphaMissense'}
-                                )
-                                # Melhora o visual das bolinhas
+                                cores_am = {'likely_pathogenic': '#ff4b4b', 'likely_benign': '#1f77b4', 'ambiguous': '#ffc107', 'Não disponível': '#d3d3d3'}
+                                fig_scatter = px.scatter(mutacoes_filtradas, x='Posicao', y='AlphaMissense_Class', color='AlphaMissense_Class', color_discrete_map=cores_am, hover_data=['Variante', 'Troca', 'ClinVar'])
                                 fig_scatter.update_traces(marker=dict(size=10, line=dict(width=1, color='DarkSlateGrey')))
                                 st.plotly_chart(fig_scatter, use_container_width=True)
-                            else:
-                                st.info("Colunas de Posição e AlphaMissense necessárias para gerar a Paisagem Mutacional.")
-                            # ==========================================
                             
                             st.markdown("---")
                             
-                            # ESTATÍSTICAS ESPECÍFICAS DO GENE (Gráficos Anteriores)
-                            st.subheader(f"📈 Estatísticas Mutacionais para o Alvo: {gene_buscado}")
-                            col_graf_1, col_graf_2 = st.columns(2)
-                            
-                            with col_graf_1:
-                                if 'ClinVar' in mutacoes_filtradas.columns:
-                                    cv_counts = mutacoes_filtradas['ClinVar'].value_counts().reset_index()
-                                    cv_counts.columns = ['Status ClinVar', 'Quantidade']
-                                    fig_bar = px.bar(cv_counts, x='Status ClinVar', y='Quantidade', 
-                                                     title="Registros Clínicos (ClinVar)",
-                                                     color='Quantidade', color_continuous_scale='Teal')
-                                    st.plotly_chart(fig_bar, use_container_width=True)
-                                    
-                            with col_graf_2:
-                                if 'AlphaMissense_Class' in mutacoes_filtradas.columns:
-                                    am_counts = mutacoes_filtradas['AlphaMissense_Class'].value_counts().reset_index()
-                                    am_counts.columns = ['Classificação', 'Total']
-                                    fig_pie = px.pie(am_counts, names='Classificação', values='Total', hole=0.4, 
-                                                     title="Predição de Impacto (AlphaMissense)",
-                                                     color='Classificação', color_discrete_map=cores_am)
-                                    st.plotly_chart(fig_pie, use_container_width=True)
-
-                            st.markdown("---")
-                            
+                            # CONTROLES E ESTRUTURA 3D
                             col_controles, col_3d = st.columns([1.2, 1])
 
                             with col_controles:
                                 st.subheader("⚙️ Configuração da Modelagem")
                                 mutacao_selecionada = st.selectbox("Selecione uma variante para análise 3D:", mutacoes_filtradas['Variante'])
+                                
+                                # Limpa o modelo 3D mutado se o usuário trocar de mutação
+                                seletor_mudou = 'ultima_mutacao' not in st.session_state or st.session_state['ultima_mutacao'] != mutacao_selecionada
+                                if seletor_mudou:
+                                    st.session_state['pdb_mutante'] = None
+                                    st.session_state['ultima_mutacao'] = mutacao_selecionada
 
                                 linha_selecionada = mutacoes_filtradas[mutacoes_filtradas['Variante'] == mutacao_selecionada]
                                 posicao_mutacao = int(linha_selecionada['Posicao'].values[0])
@@ -211,48 +148,126 @@ if not df_mutacoes.empty:
                                     aa_orig_1l = MAPA_AMINOACIDOS.get(aa_original_3l, '?')
                                     aa_mut_1l = MAPA_AMINOACIDOS.get(aa_mutado_3l, '?')
 
+                                    # ==========================================
+                                    # NOVO: INTELIGÊNCIA BIOLÓGICA (UniProt Features)
+                                    # ==========================================
+                                    is_peptideo_sinal = False
+                                    for feature in mapa_funcional:
+                                        tipo_alvo = feature.get('type', '')
+                                        try:
+                                            inicio = int(feature['location']['start']['value'])
+                                            fim = int(feature['location']['end']['value'])
+                                            
+                                            # Verifica se a mutação caiu no meio dessa característica
+                                            if inicio <= posicao_mutacao <= fim:
+                                                if tipo_alvo == 'Signal':
+                                                    is_peptideo_sinal = True
+                                                    st.info(f"🟡 **Peptídeo Sinal:** A mutação cai na região de clivagem (pos {inicio}-{fim}). É normal haver divergência de isoforma aqui.")
+                                                elif tipo_alvo == 'Active site':
+                                                    st.error(f"🔴 **SÍTIO ATIVO DESTRUÍDO:** A mutação afeta o sítio catalítico crítico da proteína na posição {posicao_mutacao}!")
+                                                elif tipo_alvo == 'Disulfide bond':
+                                                    st.warning(f"🟠 **Ponte Dissulfeto Ameaçada:** Esta mutação pode quebrar uma ligação estrutural importante.")
+                                        except:
+                                            pass
+
                                     if posicao_mutacao <= len(sequencia_selvagem):
                                         aa_uniprot = sequencia_selvagem[posicao_mutacao - 1]
                                         
-                                        if aa_uniprot != aa_orig_1l:
-                                            st.warning(f"⚠️ Alerta de Isoforma: A variante espera '{aa_original_3l}' na posição {posicao_mutacao}, mas o UniProt possui '{aa_uniprot}'.")
+                                        if aa_uniprot != aa_orig_1l and not is_peptideo_sinal:
+                                            st.warning(f"⚠️ Alerta de Isoforma: Variante espera '{aa_original_3l}', mas o UniProt possui '{aa_uniprot}'.")
                                         
                                         sequencia_mutada = sequencia_selvagem[:posicao_mutacao - 1] + aa_mut_1l + sequencia_selvagem[posicao_mutacao:]
 
-                                        if st.button("🚀 Iniciar Modelagem por Homologia (SWISS-MODEL)", use_container_width=True):
+                                        # ==========================================
+                                        # NOVO: AUTOMAÇÃO DO SWISS-MODEL
+                                        # ==========================================
+                                        if st.button("🚀 Iniciar Automação SWISS-MODEL", use_container_width=True):
                                             if not token_swiss:
                                                 st.error("Credencial SWISS-MODEL ausente no menu lateral.")
                                             else:
-                                                with st.spinner("Autenticando e enviando requisição..."):
-                                                    token_limpo = "".join(c for c in token_swiss if c.isalnum() or c == '-')
-                                                    headers = {"Authorization": f"Token {token_limpo}", "Content-Type": "application/json"}
-                                                    payload = {"target_sequences": [sequencia_mutada], "project_title": f"GenoStruct_{gene_buscado}_{mutacao_selecionada}"}
+                                                token_limpo = "".join(c for c in token_swiss if c.isalnum() or c == '-')
+                                                headers = {"Authorization": f"Token {token_limpo}", "Content-Type": "application/json"}
+                                                payload = {"target_sequences": [sequencia_mutada], "project_title": f"GenoStruct_{mutacao_selecionada}"}
 
-                                                    try:
-                                                        url_swiss = "https://swissmodel.expasy.org/automodel"
-                                                        resposta_swiss = requests.post(url_swiss, headers=headers, json=payload, timeout=15)
+                                                try:
+                                                    url_post = "https://swissmodel.expasy.org/automodel"
+                                                    resposta_swiss = requests.post(url_post, headers=headers, json=payload, timeout=15)
 
-                                                        if resposta_swiss.status_code in [200, 201, 202]:
-                                                            id_projeto = resposta_swiss.json().get('project_id', 'Desconhecido')
-                                                            st.success(f"Job ID: {id_projeto}")
-                                                            st.markdown(f"🔗 [Acompanhar renderização no dashboard oficial](https://swissmodel.expasy.org/interactive/)")
-                                                        else:
-                                                            st.error(f"Erro do Servidor (Código {resposta_swiss.status_code})")
-                                                    except requests.exceptions.RequestException:
-                                                        st.error("Falha de rede ao tentar conectar com a Suíça.")
+                                                    if resposta_swiss.status_code in [200, 201, 202]:
+                                                        id_projeto = resposta_swiss.json().get('project_id')
+                                                        
+                                                        # Interface de carregamento dinâmico
+                                                        painel_status = st.empty()
+                                                        barra_progresso = st.progress(0)
+                                                        
+                                                        url_status = f"https://swissmodel.expasy.org/project/{id_projeto}/models/summary"
+                                                        status = "PENDING"
+                                                        tentativas = 0
+                                                        
+                                                        # LOOP DE ESPERA (Consulta a cada 10s. Máx 3 min)
+                                                        while status in ["PENDING", "RUNNING", "QUEUED"] and tentativas < 18:
+                                                            time.sleep(10)
+                                                            tentativas += 1
+                                                            try:
+                                                                res_status = requests.get(url_status, headers={"Authorization": f"Token {token_limpo}"}, timeout=10)
+                                                                if res_status.status_code == 200:
+                                                                    dados_status = res_status.json()
+                                                                    status = dados_status.get("status", "UNKNOWN")
+                                                                    
+                                                                    if status == "QUEUED":
+                                                                        painel_status.info(f"⏳ Na fila do servidor suíço... (Tentativa {tentativas}/18)")
+                                                                        barra_progresso.progress(20)
+                                                                    elif status == "RUNNING":
+                                                                        painel_status.warning(f"⚙️ Construindo conformação 3D... (Tentativa {tentativas}/18)")
+                                                                        barra_progresso.progress(60)
+                                                                    elif status == "COMPLETED":
+                                                                        painel_status.success("✅ Modelagem Concluída!")
+                                                                        barra_progresso.progress(100)
+                                                                        
+                                                                        # BAIXANDO O ARQUIVO PDB MUTADO AUTOMATICAMENTE
+                                                                        url_pdb = f"https://swissmodel.expasy.org/project/{id_projeto}/models/01.pdb"
+                                                                        res_pdb = requests.get(url_pdb, headers={"Authorization": f"Token {token_limpo}"}, timeout=10)
+                                                                        if res_pdb.status_code == 200:
+                                                                            st.session_state['pdb_mutante'] = res_pdb.text
+                                                                    elif status in ["FAILED", "CANCELLED"]:
+                                                                        painel_status.error("❌ A modelagem falhou no servidor do SWISS-MODEL.")
+                                                                        break
+                                                            except:
+                                                                painel_status.error("Falha ao checar status. Tentando novamente...")
+                                                                
+                                                        if tentativas >= 18:
+                                                            painel_status.error("Tempo limite de 3 minutos excedido. O servidor está lotado.")
+                                                    else:
+                                                        st.error(f"Erro do Servidor (Código {resposta_swiss.status_code})")
+                                                except requests.exceptions.RequestException:
+                                                    st.error("Falha de rede ao conectar com a Suíça.")
                                     else:
-                                        st.error("Erro: Posição excede o tamanho da proteína.")
-                                else:
-                                    st.error("Erro de formatação na variante.")
-                            
-                            with col_3d:
-                                st.subheader("🔬 Renderização Estrutural")
-                                if posicao_mutacao:
-                                    with st.spinner("Baixando coordenadas atômicas PDB..."):
-                                        pdb_texto = buscar_pdb_alphafold(uniprot_id)
+                                        st.error("Posição excede o tamanho da proteína.")
+                                
+                                # SE O DOWNLOAD DEU CERTO, MOSTRA O MUTANTE AQUI NA ESQUERDA
+                                if st.session_state.get('pdb_mutante'):
+                                    st.markdown("---")
+                                    st.subheader("🔴 Estrutura Mutada (SWISS-MODEL)")
+                                    view_mut = py3Dmol.view(width=450, height=450)
+                                    view_mut.addModel(st.session_state['pdb_mutante'], 'pdb')
+                                    view_mut.setStyle({'cartoon': {'color': 'lightblue'}})
+                                    view_mut.setStyle({'resi': str(posicao_mutacao)}, {'stick': {'colorscheme': 'redCarbon', 'radius': 0.3}})
+                                    view_mut.zoomTo()
+                                    showmol(view_mut, height=450, width=450)
+                                    
+                                    st.download_button(
+                                        label="📥 Exportar Mutante Modelado (.pdb)",
+                                        data=st.session_state['pdb_mutante'],
+                                        file_name=f"GenoStruct_{gene_buscado}_{mutacao_selecionada}.pdb",
+                                        mime="chemical/x-pdb",
+                                    )
 
+                            with col_3d:
+                                st.subheader("🔵 Estrutura Selvagem (AlphaFold)")
+                                if posicao_mutacao:
+                                    with st.spinner("Baixando coordenadas PDB..."):
+                                        pdb_texto = buscar_pdb_alphafold(uniprot_id)
                                     if pdb_texto:
-                                        st.caption(f"Resíduo Mutado ({posicao_mutacao}) em vermelho.")
                                         view = py3Dmol.view(width=450, height=450)
                                         view.addModel(pdb_texto, 'pdb')
                                         view.setStyle({'cartoon': {'color': 'lightgray'}})
@@ -260,23 +275,9 @@ if not df_mutacoes.empty:
                                         view.zoomTo()
                                         showmol(view, height=450, width=450)
                                         
-                                        # ==========================================
-                                        # NOVO: BOTÃO DE DOWNLOAD DO PDB SELVAGEM
-                                        # ==========================================
                                         st.download_button(
-                                            label="📥 Exportar Estrutura Selvagem (.pdb)",
+                                            label="📥 Exportar Selvagem (.pdb)",
                                             data=pdb_texto,
-                                            file_name=f"AlphaFold_WildType_{uniprot_id}.pdb",
+                                            file_name=f"AlphaFold_{uniprot_id}.pdb",
                                             mime="chemical/x-pdb",
                                         )
-                                        # ==========================================
-                                    else:
-                                        st.warning("Modelo primário indisponível no AlphaFold.")
-                        else:
-                            st.info("Nenhuma variante registrada no banco local.")
-                    else:
-                        st.error("⚠️ Alvo não reconhecido.")
-                except requests.exceptions.RequestException:
-                    st.error("⚠️ Falha de rede.")
-else:
-    st.info("Banco de dados não encontrado.")
