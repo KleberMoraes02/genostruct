@@ -4,6 +4,7 @@ import pandas as pd
 import py3Dmol
 from stmol import showmol
 import os
+import plotly.express as px
 
 # --- CONFIGURAÇÃO GLOBAL DA PÁGINA ---
 st.set_page_config(
@@ -25,15 +26,11 @@ MAPA_AMINOACIDOS = {
 @st.cache_data(show_spinner=False)
 def carregar_banco_mutacoes():
     try:
-        # Lê o arquivo direto da pasta 'dados'
         caminho = os.path.join("dados", "banco_teste.csv.gz")
         df = pd.read_csv(caminho)
         
-        # BÔNUS: Consertando erro de acentuação do ClinVar
         df = df.replace('Sem registro clÃ­nico', 'Sem registro clínico')
 
-        # NOVO: CRIANDO O LINK DO GNOMAD
-        # Verifica se as 4 colunas necessárias existem no banco para não dar erro
         if all(col in df.columns for col in ['Chromosome', 'Position', 'Ref', 'Alt']):
             df['Link_gnomAD'] = "https://gnomad.broadinstitute.org/variant/" + \
                                 df['Chromosome'].astype(str) + "-" + \
@@ -62,18 +59,54 @@ def buscar_pdb_alphafold(uniprot_id):
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/3022/3022421.png", width=60)
     st.title("GenoStruct")
-    st.caption("v1.1.0 (Links e Dicionário)")
+    st.caption("v1.2.1 (Dashboard Integrado)")
     st.markdown("---")
     st.markdown("**⚙️ Credenciais de Modelagem**")
     token_swiss = st.text_input("SWISS-MODEL API Token:", type="password")
 
 # --- CORPO PRINCIPAL DO SITE ---
 st.title("GenoStruct: Integração Genômica e Estrutural")
-st.markdown("Busque um gene para correlacionar variantes clínicas com predições estruturais.")
 
 df_mutacoes = carregar_banco_mutacoes()
 
 if not df_mutacoes.empty:
+    
+    # ==========================================
+    # SEÇÃO 1: GRÁFICOS DO BANCO (TOPO)
+    # ==========================================
+    st.header("📈 Visão Geral do Banco de Dados")
+    st.markdown(f"**Total de variantes carregadas:** {len(df_mutacoes)}")
+    
+    # Divide a tela da aba de gráficos em duas metades
+    col_graf_1, col_graf_2 = st.columns(2)
+    
+    with col_graf_1:
+        if 'Gene' in df_mutacoes.columns:
+            st.subheader("Top 10 Genes com mais Mutações")
+            top_genes = df_mutacoes['Gene'].value_counts().head(10).reset_index()
+            top_genes.columns = ['Gene', 'Quantidade']
+            
+            fig_bar = px.bar(top_genes, x='Gene', y='Quantidade', color='Quantidade', color_continuous_scale='Blues')
+            st.plotly_chart(fig_bar, use_container_width=True)
+            
+    with col_graf_2:
+        if 'AlphaMissense_Class' in df_mutacoes.columns:
+            st.subheader("Predição AlphaMissense")
+            am_counts = df_mutacoes['AlphaMissense_Class'].value_counts().reset_index()
+            am_counts.columns = ['Classificação', 'Total']
+            
+            cores_am = {'Pathogenic':'#ff4b4b', 'Benign':'#1f77b4', 'Ambiguous':'#ffc107', 'Não avaliado':'#d3d3d3'}
+            fig_pie = px.pie(am_counts, names='Classificação', values='Total', hole=0.4, color='Classificação', color_discrete_map=cores_am)
+            st.plotly_chart(fig_pie, use_container_width=True)
+
+    # Linha divisória elegante
+    st.markdown("---")
+
+    # ==========================================
+    # SEÇÃO 2: PESQUISA DO GENE E 3D (BAIXO)
+    # ==========================================
+    st.header("🧬 Análise por Gene e Estrutura 3D")
+    st.markdown("Busque um gene para correlacionar variantes clínicas com predições estruturais.")
     gene_buscado_raw = st.text_input("Nome do Gene alvo (ex: ABCD2):")
     gene_buscado = gene_buscado_raw.strip().upper()
 
@@ -93,11 +126,9 @@ if not df_mutacoes.empty:
 
                         st.success(f"Conexão estabelecida! Alvo: **{gene_buscado}** (Accession: {uniprot_id})")
 
-                        # --- 1. PAINEL CLÍNICO (TELA CHEIA) ---
                         st.subheader("📊 Perfil Mutacional Clínico")
                         mutacoes_filtradas = df_mutacoes[df_mutacoes['Gene'].str.upper() == gene_buscado]
 
-                        # --- DICIONÁRIO DE COLUNAS (Sanfona) ---
                         with st.expander("📖 Dicionário de Colunas (Clique para expandir)"):
                             st.markdown("""
                             Este guia explica os dados genômicos, clínicos e preditivos exibidos na tabela abaixo.
@@ -106,11 +137,11 @@ if not df_mutacoes.empty:
                             - **Gene:** Símbolo oficial aprovado pelo comitê HGNC.
                             - **HGNC_ID:** Identificador numérico único do gene.
                             - **UniProt_Accession:** Código do gene no banco mundial de proteínas (UniProt).
-                            - **rsID:** Identificador universal da variante no banco dbSNP (Reference SNP cluster ID).
+                            - **rsID:** Identificador universal da variante no banco dbSNP.
                             
                             **Nomenclatura (Padrão HGVS):**
-                            - **HGVS_c:** Alteração no nível do DNA (sequência codificante). *Ex: c.2219C>T (Citosina trocada por Timina).*
-                            - **HGVS_p / Variante:** Alteração no nível da Proteína. *Ex: p.Ser740Phe (Serina trocada por Fenilalanina na posição 740).*
+                            - **HGVS_c:** Alteração no nível do DNA (sequência codificante).
+                            - **HGVS_p / Variante:** Alteração no nível da Proteína.
                             - **Posicao:** A posição numérica exata do aminoácido afetado na cadeia proteica.
                             
                             **Predição e Relevância Clínica:**
@@ -118,14 +149,9 @@ if not df_mutacoes.empty:
                             - **ClinVar:** Registro de relevância clínica real observada em pacientes médicos.
                             - **Link_gnomAD:** Link direto para consultar a frequência da mutação na população mundial (banco gnomAD).
                             """)
-                        # ---------------------------------------------
 
                         if not mutacoes_filtradas.empty:
-                            
-                            # --- SELETOR DE COLUNAS ---
                             todas_as_colunas = mutacoes_filtradas.columns.tolist()
-                            
-                            # Adicionamos o 'Link_gnomAD' na lista de colunas padrão para já vir ativado
                             colunas_padrao = ['Gene', 'Variante', 'Posicao', 'Troca', 'AlphaMissense_Class', 'ClinVar', 'Link_gnomAD']
                             colunas_padrao = [c for c in colunas_padrao if c in todas_as_colunas]
 
@@ -137,20 +163,13 @@ if not df_mutacoes.empty:
 
                             df_exibicao = mutacoes_filtradas[colunas_selecionadas]
                             
-                            # NOVO: CONFIGURANDO O VISUAL DO LINK NA TABELA
                             configuracao_colunas = {}
                             if 'Link_gnomAD' in df_exibicao.columns:
-                                configuracao_colunas['Link_gnomAD'] = st.column_config.LinkColumn(
-                                    "🔗 Frequência (gnomAD)", 
-                                    display_text="Ver Variante"
-                                )
+                                configuracao_colunas['Link_gnomAD'] = st.column_config.LinkColumn("🔗 Frequência (gnomAD)", display_text="Ver Variante")
 
                             st.dataframe(df_exibicao, use_container_width=True, hide_index=True, column_config=configuracao_colunas)
-                            # --------------------------------
-
                             st.markdown("---")
                             
-                            # --- 2. PAINEL DE SIMULAÇÃO E 3D (INFERIOR - DIVIDIDO) ---
                             col_controles, col_3d = st.columns([1.2, 1])
 
                             with col_controles:
@@ -180,14 +199,8 @@ if not df_mutacoes.empty:
                                             else:
                                                 with st.spinner("Enviando requisição (POST) para o servidor..."):
                                                     token_limpo = "".join(c for c in token_swiss if c.isalnum() or c == '-')
-                                                    headers = {
-                                                        "Authorization": f"Token {token_limpo}",
-                                                        "Content-Type": "application/json"
-                                                    }
-                                                    payload = {
-                                                        "target_sequences": [sequencia_mutada],
-                                                        "project_title": f"GenoStruct_{gene_buscado}_{mutacao_selecionada}"
-                                                    }
+                                                    headers = {"Authorization": f"Token {token_limpo}", "Content-Type": "application/json"}
+                                                    payload = {"target_sequences": [sequencia_mutada], "project_title": f"GenoStruct_{gene_buscado}_{mutacao_selecionada}"}
 
                                                     try:
                                                         url_swiss = "https://swissmodel.expasy.org/automodel"
