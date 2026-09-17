@@ -6,3 +6,4 @@ stmol
 ipywidgets
 ipython_genutils
 plotly==5.18.0
+biopython
