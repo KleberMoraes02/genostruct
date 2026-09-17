@@ -3,7 +3,7 @@ import requests
 import pandas as pd
 import py3Dmol
 from stmol import showmol
-import os # NOVO: Biblioteca para o Python ler pastas
+import os
 
 # --- CONFIGURAÇÃO GLOBAL DA PÁGINA ---
 st.set_page_config(
@@ -21,12 +21,12 @@ MAPA_AMINOACIDOS = {
     'Ser': 'S', 'Thr': 'T', 'Trp': 'W', 'Tyr': 'Y', 'Val': 'V'
 }
 
-# --- FUNÇÕES DE DADOS ---
+# --- FUNÇÃO DE DADOS ---
 @st.cache_data(show_spinner=False)
-def carregar_banco_mutacoes(nome_arquivo): # NOVO: Agora a função recebe um nome dinâmico
+def carregar_banco_mutacoes():
     try:
-        # NOVO: Cola a palavra "dados" com o nome do arquivo (Ex: dados/banco_teste.csv.gz)
-        caminho = os.path.join("dados", nome_arquivo)
+        # Lê o arquivo direto da pasta 'dados' que criamos
+        caminho = os.path.join("dados", "banco_teste.csv.gz")
         return pd.read_csv(caminho)
     except Exception:
         return pd.DataFrame()
@@ -49,27 +49,7 @@ def buscar_pdb_alphafold(uniprot_id):
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/3022/3022421.png", width=60)
     st.title("GenoStruct")
-    st.caption("v1.1.0 (Seleção de Bancos)")
-    st.markdown("---")
-    
-    # --- NOVO: SELETOR DE ARQUIVOS ---
-    st.markdown("**📁 Banco de Dados**")
-    try:
-        # Pega o nome de todos os arquivos dentro da pasta 'dados'
-        arquivos = os.listdir("dados")
-    except FileNotFoundError:
-        arquivos = []
-        
-    if arquivos:
-        # Cria a caixinha de seleção na interface
-        arquivo_escolhido = st.selectbox("Selecione a tabela para análise:", arquivos)
-        # Carrega os dados usando a função que modificamos lá em cima
-        df_mutacoes = carregar_banco_mutacoes(arquivo_escolhido)
-    else:
-        st.error("Pasta 'dados' vazia ou não encontrada.")
-        df_mutacoes = pd.DataFrame()
-    # ---------------------------------
-
+    st.caption("v1.1.0 (Filtro de Colunas)")
     st.markdown("---")
     st.markdown("**⚙️ Credenciais de Modelagem**")
     token_swiss = st.text_input("SWISS-MODEL API Token:", type="password")
@@ -78,7 +58,8 @@ with st.sidebar:
 st.title("GenoStruct: Integração Genômica e Estrutural")
 st.markdown("Busque um gene para correlacionar variantes clínicas com predições estruturais.")
 
-# NOVO: O site só funciona se uma tabela tiver sido carregada com sucesso
+df_mutacoes = carregar_banco_mutacoes()
+
 if not df_mutacoes.empty:
     gene_buscado_raw = st.text_input("Nome do Gene alvo (ex: ABCD2):")
     gene_buscado = gene_buscado_raw.strip().upper()
@@ -99,12 +80,30 @@ if not df_mutacoes.empty:
 
                         st.success(f"Conexão estabelecida! Alvo: **{gene_buscado}** (Accession: {uniprot_id})")
 
-                        # --- 1. PAINEL CLÍNICO (SUPERIOR - TELA CHEIA) ---
+                        # --- 1. PAINEL CLÍNICO (TELA CHEIA) ---
                         st.subheader("📊 Perfil Mutacional Clínico")
                         mutacoes_filtradas = df_mutacoes[df_mutacoes['Gene'].str.upper() == gene_buscado]
 
                         if not mutacoes_filtradas.empty:
-                            st.dataframe(mutacoes_filtradas, use_container_width=True, hide_index=True)
+                            
+                            # --- NOVO: SELETOR DE COLUNAS ---
+                            todas_as_colunas = mutacoes_filtradas.columns.tolist()
+                            
+                            # Escolhemos algumas colunas para virem selecionadas por padrão
+                            colunas_padrao = ['Gene', 'Variante', 'Posicao', 'Troca', 'AlphaMissense_Class', 'ClinVar']
+                            colunas_padrao = [c for c in colunas_padrao if c in todas_as_colunas] # Evita erros se a coluna não existir
+
+                            colunas_selecionadas = st.multiselect(
+                                "Selecione as colunas que deseja visualizar na tabela:",
+                                options=todas_as_colunas,
+                                default=colunas_padrao
+                            )
+
+                            # A tabela agora só mostra o que o usuário selecionou no menu acima
+                            df_exibicao = mutacoes_filtradas[colunas_selecionadas]
+                            st.dataframe(df_exibicao, use_container_width=True, hide_index=True)
+                            # --------------------------------
+
                             st.markdown("---")
                             
                             # --- 2. PAINEL DE SIMULAÇÃO E 3D (INFERIOR - DIVIDIDO) ---
@@ -187,4 +186,4 @@ if not df_mutacoes.empty:
                 except requests.exceptions.RequestException:
                     st.error("⚠️ Falha de comunicação com os bancos de dados. Verifique sua conexão de rede.")
 else:
-    st.info("Por favor, selecione um arquivo no menu lateral para iniciar.")
+    st.info("Arquivo de banco de dados não encontrado na pasta 'dados'.")
