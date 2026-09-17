@@ -59,23 +59,19 @@ def buscar_pdb_alphafold(uniprot_id):
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/3022/3022421.png", width=60)
     st.title("GenoStruct")
-    st.caption("v1.2.1 (Dashboard Integrado)")
+    st.caption("v1.2.2 (Estatísticas por Gene)")
     st.markdown("---")
     st.markdown("**⚙️ Credenciais de Modelagem**")
     token_swiss = st.text_input("SWISS-MODEL API Token:", type="password")
 
 # --- CORPO PRINCIPAL DO SITE ---
 st.title("GenoStruct: Integração Genômica e Estrutural")
+st.markdown("Busque um gene para correlacionar variantes clínicas com predições estruturais.")
 
 df_mutacoes = carregar_banco_mutacoes()
 
 if not df_mutacoes.empty:
     
-    # ==========================================
-    # SEÇÃO 1: PESQUISA DO GENE E 3D (TOPO)
-    # ==========================================
-    st.header("🧬 Análise por Gene e Estrutura 3D")
-    st.markdown("Busque um gene para correlacionar variantes clínicas com predições estruturais.")
     gene_buscado_raw = st.text_input("Nome do Gene alvo (ex: ABCD2):")
     gene_buscado = gene_buscado_raw.strip().upper()
 
@@ -95,8 +91,10 @@ if not df_mutacoes.empty:
 
                         st.success(f"Conexão estabelecida! Alvo: **{gene_buscado}** (Accession: {uniprot_id})")
 
-                        st.subheader("📊 Perfil Mutacional Clínico")
+                        # Separa apenas as mutações do gene pesquisado
                         mutacoes_filtradas = df_mutacoes[df_mutacoes['Gene'].str.upper() == gene_buscado]
+
+                        st.subheader("📊 Perfil Mutacional Clínico")
 
                         with st.expander("📖 Dicionário de Colunas (Clique para expandir)"):
                             st.markdown("""
@@ -138,6 +136,42 @@ if not df_mutacoes.empty:
 
                             st.dataframe(df_exibicao, use_container_width=True, hide_index=True, column_config=configuracao_colunas)
                             st.markdown("---")
+                            
+                            # ==========================================
+                            # NOVO: ESTATÍSTICAS ESPECÍFICAS DO GENE
+                            # ==========================================
+                            st.subheader(f"📈 Estatísticas Mutacionais para o Alvo: {gene_buscado}")
+                            col_graf_1, col_graf_2 = st.columns(2)
+                            
+                            with col_graf_1:
+                                if 'ClinVar' in mutacoes_filtradas.columns:
+                                    # Gráfico de Barras contando os tipos de registros no ClinVar
+                                    cv_counts = mutacoes_filtradas['ClinVar'].value_counts().reset_index()
+                                    cv_counts.columns = ['Status ClinVar', 'Quantidade']
+                                    fig_bar = px.bar(cv_counts, x='Status ClinVar', y='Quantidade', 
+                                                     title="Registros Clínicos (ClinVar)",
+                                                     color='Quantidade', color_continuous_scale='Teal')
+                                    st.plotly_chart(fig_bar, use_container_width=True)
+                                    
+                            with col_graf_2:
+                                if 'AlphaMissense_Class' in mutacoes_filtradas.columns:
+                                    # Gráfico de Rosquinha do AlphaMissense usando os rótulos reais revelados na imagem
+                                    am_counts = mutacoes_filtradas['AlphaMissense_Class'].value_counts().reset_index()
+                                    am_counts.columns = ['Classificação', 'Total']
+                                    
+                                    cores_am = {
+                                        'likely_pathogenic': '#ff4b4b', # Vermelho (Patogênico)
+                                        'likely_benign': '#1f77b4',     # Azul (Benigno)
+                                        'ambiguous': '#ffc107',         # Amarelo (Ambíguo)
+                                        'Não disponível': '#d3d3d3'     # Cinza (Sem predição)
+                                    }
+                                    fig_pie = px.pie(am_counts, names='Classificação', values='Total', hole=0.4, 
+                                                     title="Predição de Impacto (AlphaMissense)",
+                                                     color='Classificação', color_discrete_map=cores_am)
+                                    st.plotly_chart(fig_pie, use_container_width=True)
+
+                            st.markdown("---")
+                            # ==========================================
                             
                             col_controles, col_3d = st.columns([1.2, 1])
 
@@ -211,35 +245,5 @@ if not df_mutacoes.empty:
                         st.error("⚠️ Alvo genômico não reconhecido nos repositórios oficiais.")
                 except requests.exceptions.RequestException:
                     st.error("⚠️ Falha de comunicação com os bancos de dados. Verifique sua conexão de rede.")
-
-    # ==========================================
-    # SEÇÃO 2: GRÁFICOS DO BANCO (BAIXO)
-    # ==========================================
-    st.markdown("<br><br>", unsafe_allow_html=True) # Dá um espaço em branco extra
-    st.markdown("---")
-    st.header("📈 Visão Geral do Banco de Dados")
-    st.markdown(f"**Total de variantes carregadas no banco:** {len(df_mutacoes)}")
-    
-    col_graf_1, col_graf_2 = st.columns(2)
-    
-    with col_graf_1:
-        if 'Gene' in df_mutacoes.columns:
-            st.subheader("Top 10 Genes com mais Mutações")
-            top_genes = df_mutacoes['Gene'].value_counts().head(10).reset_index()
-            top_genes.columns = ['Gene', 'Quantidade']
-            
-            fig_bar = px.bar(top_genes, x='Gene', y='Quantidade', color='Quantidade', color_continuous_scale='Blues')
-            st.plotly_chart(fig_bar, use_container_width=True)
-            
-    with col_graf_2:
-        if 'AlphaMissense_Class' in df_mutacoes.columns:
-            st.subheader("Predição AlphaMissense Global")
-            am_counts = df_mutacoes['AlphaMissense_Class'].value_counts().reset_index()
-            am_counts.columns = ['Classificação', 'Total']
-            
-            cores_am = {'Pathogenic':'#ff4b4b', 'Benign':'#1f77b4', 'Ambiguous':'#ffc107', 'Não avaliado':'#d3d3d3'}
-            fig_pie = px.pie(am_counts, names='Classificação', values='Total', hole=0.4, color='Classificação', color_discrete_map=cores_am)
-            st.plotly_chart(fig_pie, use_container_width=True)
-
 else:
     st.info("Arquivo de banco de dados não encontrado na pasta 'dados'.")
