@@ -25,9 +25,22 @@ MAPA_AMINOACIDOS = {
 @st.cache_data(show_spinner=False)
 def carregar_banco_mutacoes():
     try:
-        # Lê o arquivo direto da pasta 'dados' que criamos
+        # Lê o arquivo direto da pasta 'dados'
         caminho = os.path.join("dados", "banco_teste.csv.gz")
-        return pd.read_csv(caminho)
+        df = pd.read_csv(caminho)
+        
+        # BÔNUS: Consertando erro de acentuação do ClinVar
+        df = df.replace('Sem registro clÃ­nico', 'Sem registro clínico')
+
+        # NOVO: CRIANDO O LINK DO GNOMAD
+        # Verifica se as 4 colunas necessárias existem no banco para não dar erro
+        if all(col in df.columns for col in ['Chromosome', 'Position', 'Ref', 'Alt']):
+            df['Link_gnomAD'] = "https://gnomad.broadinstitute.org/variant/" + \
+                                df['Chromosome'].astype(str) + "-" + \
+                                df['Position'].astype(str) + "-" + \
+                                df['Ref'].astype(str) + "-" + \
+                                df['Alt'].astype(str) + "?dataset=gnomad_r4"
+        return df
     except Exception:
         return pd.DataFrame()
 
@@ -49,7 +62,7 @@ def buscar_pdb_alphafold(uniprot_id):
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/3022/3022421.png", width=60)
     st.title("GenoStruct")
-    st.caption("v1.1.0 (Filtro de Colunas)")
+    st.caption("v1.1.0 (Links e Dicionário)")
     st.markdown("---")
     st.markdown("**⚙️ Credenciais de Modelagem**")
     token_swiss = st.text_input("SWISS-MODEL API Token:", type="password")
@@ -84,7 +97,7 @@ if not df_mutacoes.empty:
                         st.subheader("📊 Perfil Mutacional Clínico")
                         mutacoes_filtradas = df_mutacoes[df_mutacoes['Gene'].str.upper() == gene_buscado]
 
-                        # --- NOVO: DICIONÁRIO DE COLUNAS (Sanfona) ---
+                        # --- DICIONÁRIO DE COLUNAS (Sanfona) ---
                         with st.expander("📖 Dicionário de Colunas (Clique para expandir)"):
                             st.markdown("""
                             Este guia explica os dados genômicos, clínicos e preditivos exibidos na tabela abaixo.
@@ -103,18 +116,18 @@ if not df_mutacoes.empty:
                             **Predição e Relevância Clínica:**
                             - **AlphaMissense_Class:** Inteligência artificial do Google DeepMind que prevê se a mutação é Patogênica, Benigna ou Ambígua.
                             - **ClinVar:** Registro de relevância clínica real observada em pacientes médicos.
-                            - **Frequency (gnomAD):** A frequência com que esta mutação ocorre na população mundial geral.
+                            - **Link_gnomAD:** Link direto para consultar a frequência da mutação na população mundial (banco gnomAD).
                             """)
                         # ---------------------------------------------
 
                         if not mutacoes_filtradas.empty:
                             
-                            # --- NOVO: SELETOR DE COLUNAS ---
+                            # --- SELETOR DE COLUNAS ---
                             todas_as_colunas = mutacoes_filtradas.columns.tolist()
                             
-                            # Escolhemos algumas colunas para virem selecionadas por padrão
-                            colunas_padrao = ['Gene', 'Variante', 'Posicao', 'Troca', 'AlphaMissense_Class', 'ClinVar']
-                            colunas_padrao = [c for c in colunas_padrao if c in todas_as_colunas] # Evita erros se a coluna não existir
+                            # Adicionamos o 'Link_gnomAD' na lista de colunas padrão para já vir ativado
+                            colunas_padrao = ['Gene', 'Variante', 'Posicao', 'Troca', 'AlphaMissense_Class', 'ClinVar', 'Link_gnomAD']
+                            colunas_padrao = [c for c in colunas_padrao if c in todas_as_colunas]
 
                             colunas_selecionadas = st.multiselect(
                                 "Selecione as colunas que deseja visualizar na tabela:",
@@ -122,9 +135,17 @@ if not df_mutacoes.empty:
                                 default=colunas_padrao
                             )
 
-                            # A tabela agora só mostra o que o usuário selecionou no menu acima
                             df_exibicao = mutacoes_filtradas[colunas_selecionadas]
-                            st.dataframe(df_exibicao, use_container_width=True, hide_index=True)
+                            
+                            # NOVO: CONFIGURANDO O VISUAL DO LINK NA TABELA
+                            configuracao_colunas = {}
+                            if 'Link_gnomAD' in df_exibicao.columns:
+                                configuracao_colunas['Link_gnomAD'] = st.column_config.LinkColumn(
+                                    "🔗 Frequência (gnomAD)", 
+                                    display_text="Ver Variante"
+                                )
+
+                            st.dataframe(df_exibicao, use_container_width=True, hide_index=True, column_config=configuracao_colunas)
                             # --------------------------------
 
                             st.markdown("---")
