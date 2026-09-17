@@ -80,6 +80,10 @@ if not df_mutacoes.empty:
 
                         st.success(f"Conexão estabelecida! Alvo: **{gene_buscado}** (Accession: {uniprot_id})")
 
+                        # --- 1. PAINEL CLÍNICO (TELA CHEIA) ---
+                        st.subheader("📊 Perfil Mutacional Clínico")
+                        mutacoes_filtradas = df_mutacoes[df_mutacoes['Gene'].str.upper() == gene_buscado]
+
                         # --- NOVO: DICIONÁRIO DE COLUNAS (Sanfona) ---
                         with st.expander("📖 Dicionário de Colunas (Clique para expandir)"):
                             st.markdown("""
