@@ -72,38 +72,7 @@ df_mutacoes = carregar_banco_mutacoes()
 if not df_mutacoes.empty:
     
     # ==========================================
-    # SEÇÃO 1: GRÁFICOS DO BANCO (TOPO)
-    # ==========================================
-    st.header("📈 Visão Geral do Banco de Dados")
-    st.markdown(f"**Total de variantes carregadas:** {len(df_mutacoes)}")
-    
-    # Divide a tela da aba de gráficos em duas metades
-    col_graf_1, col_graf_2 = st.columns(2)
-    
-    with col_graf_1:
-        if 'Gene' in df_mutacoes.columns:
-            st.subheader("Top 10 Genes com mais Mutações")
-            top_genes = df_mutacoes['Gene'].value_counts().head(10).reset_index()
-            top_genes.columns = ['Gene', 'Quantidade']
-            
-            fig_bar = px.bar(top_genes, x='Gene', y='Quantidade', color='Quantidade', color_continuous_scale='Blues')
-            st.plotly_chart(fig_bar, use_container_width=True)
-            
-    with col_graf_2:
-        if 'AlphaMissense_Class' in df_mutacoes.columns:
-            st.subheader("Predição AlphaMissense")
-            am_counts = df_mutacoes['AlphaMissense_Class'].value_counts().reset_index()
-            am_counts.columns = ['Classificação', 'Total']
-            
-            cores_am = {'Pathogenic':'#ff4b4b', 'Benign':'#1f77b4', 'Ambiguous':'#ffc107', 'Não avaliado':'#d3d3d3'}
-            fig_pie = px.pie(am_counts, names='Classificação', values='Total', hole=0.4, color='Classificação', color_discrete_map=cores_am)
-            st.plotly_chart(fig_pie, use_container_width=True)
-
-    # Linha divisória elegante
-    st.markdown("---")
-
-    # ==========================================
-    # SEÇÃO 2: PESQUISA DO GENE E 3D (BAIXO)
+    # SEÇÃO 1: PESQUISA DO GENE E 3D (TOPO)
     # ==========================================
     st.header("🧬 Análise por Gene e Estrutura 3D")
     st.markdown("Busque um gene para correlacionar variantes clínicas com predições estruturais.")
@@ -242,5 +211,35 @@ if not df_mutacoes.empty:
                         st.error("⚠️ Alvo genômico não reconhecido nos repositórios oficiais.")
                 except requests.exceptions.RequestException:
                     st.error("⚠️ Falha de comunicação com os bancos de dados. Verifique sua conexão de rede.")
+
+    # ==========================================
+    # SEÇÃO 2: GRÁFICOS DO BANCO (BAIXO)
+    # ==========================================
+    st.markdown("<br><br>", unsafe_allow_html=True) # Dá um espaço em branco extra
+    st.markdown("---")
+    st.header("📈 Visão Geral do Banco de Dados")
+    st.markdown(f"**Total de variantes carregadas no banco:** {len(df_mutacoes)}")
+    
+    col_graf_1, col_graf_2 = st.columns(2)
+    
+    with col_graf_1:
+        if 'Gene' in df_mutacoes.columns:
+            st.subheader("Top 10 Genes com mais Mutações")
+            top_genes = df_mutacoes['Gene'].value_counts().head(10).reset_index()
+            top_genes.columns = ['Gene', 'Quantidade']
+            
+            fig_bar = px.bar(top_genes, x='Gene', y='Quantidade', color='Quantidade', color_continuous_scale='Blues')
+            st.plotly_chart(fig_bar, use_container_width=True)
+            
+    with col_graf_2:
+        if 'AlphaMissense_Class' in df_mutacoes.columns:
+            st.subheader("Predição AlphaMissense Global")
+            am_counts = df_mutacoes['AlphaMissense_Class'].value_counts().reset_index()
+            am_counts.columns = ['Classificação', 'Total']
+            
+            cores_am = {'Pathogenic':'#ff4b4b', 'Benign':'#1f77b4', 'Ambiguous':'#ffc107', 'Não avaliado':'#d3d3d3'}
+            fig_pie = px.pie(am_counts, names='Classificação', values='Total', hole=0.4, color='Classificação', color_discrete_map=cores_am)
+            st.plotly_chart(fig_pie, use_container_width=True)
+
 else:
     st.info("Arquivo de banco de dados não encontrado na pasta 'dados'.")
