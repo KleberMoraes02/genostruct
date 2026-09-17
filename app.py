@@ -3,6 +3,7 @@ import requests
 import pandas as pd
 import py3Dmol
 from stmol import showmol
+import os # NOVO: Biblioteca para o Python ler pastas
 
 # --- CONFIGURAÇÃO GLOBAL DA PÁGINA ---
 st.set_page_config(
@@ -20,12 +21,14 @@ MAPA_AMINOACIDOS = {
     'Ser': 'S', 'Thr': 'T', 'Trp': 'W', 'Tyr': 'Y', 'Val': 'V'
 }
 
-# --- FUNÇÕES DE DADOS (COM CACHE PARA VELOCIDADE) ---
+# --- FUNÇÕES DE DADOS ---
 @st.cache_data(show_spinner=False)
-def carregar_banco_mutacoes():
+def carregar_banco_mutacoes(nome_arquivo): # NOVO: Agora a função recebe um nome dinâmico
     try:
-        return pd.read_csv("banco_teste.csv.gz")
-    except FileNotFoundError:
+        # NOVO: Cola a palavra "dados" com o nome do arquivo (Ex: dados/banco_teste.csv.gz)
+        caminho = os.path.join("dados", nome_arquivo)
+        return pd.read_csv(caminho)
+    except Exception:
         return pd.DataFrame()
 
 @st.cache_resource(show_spinner=False)
@@ -46,130 +49,142 @@ def buscar_pdb_alphafold(uniprot_id):
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/3022/3022421.png", width=60)
     st.title("GenoStruct")
-    st.caption("v1.0.0 (Build de Prototipação)")
+    st.caption("v1.1.0 (Seleção de Bancos)")
     st.markdown("---")
-    st.markdown("**Credenciais de Modelagem**")
-    token_swiss = st.text_input("SWISS-MODEL API Token:", type="password", help="Necessário apenas para modelagem por homologia (POST).")
+    
+    # --- NOVO: SELETOR DE ARQUIVOS ---
+    st.markdown("**📁 Banco de Dados**")
+    try:
+        # Pega o nome de todos os arquivos dentro da pasta 'dados'
+        arquivos = os.listdir("dados")
+    except FileNotFoundError:
+        arquivos = []
+        
+    if arquivos:
+        # Cria a caixinha de seleção na interface
+        arquivo_escolhido = st.selectbox("Selecione a tabela para análise:", arquivos)
+        # Carrega os dados usando a função que modificamos lá em cima
+        df_mutacoes = carregar_banco_mutacoes(arquivo_escolhido)
+    else:
+        st.error("Pasta 'dados' vazia ou não encontrada.")
+        df_mutacoes = pd.DataFrame()
+    # ---------------------------------
+
     st.markdown("---")
-    st.info("Desenvolvido para análise integrada de variantes genômicas e estrutura proteica.")
+    st.markdown("**⚙️ Credenciais de Modelagem**")
+    token_swiss = st.text_input("SWISS-MODEL API Token:", type="password")
 
 # --- CORPO PRINCIPAL DO SITE ---
 st.title("GenoStruct: Integração Genômica e Estrutural")
 st.markdown("Busque um gene para correlacionar variantes clínicas com predições estruturais.")
 
-df_mutacoes = carregar_banco_mutacoes()
+# NOVO: O site só funciona se uma tabela tiver sido carregada com sucesso
+if not df_mutacoes.empty:
+    gene_buscado_raw = st.text_input("Nome do Gene alvo (ex: ABCD2):")
+    gene_buscado = gene_buscado_raw.strip().upper()
 
-# Caixa de pesquisa com tratamento de string (limpa espaços vazios)
-gene_buscado_raw = st.text_input("Nome do Gene alvo (ex: TNF):")
-gene_buscado = gene_buscado_raw.strip().upper()
+    if gene_buscado:
+        if len(gene_buscado) < 2:
+            st.warning("⚠️ Digite um nome de gene válido com pelo menos 2 letras.")
+        else:
+            with st.spinner("Sincronizando com UniProtKB..."):
+                try:
+                    url = f"https://rest.uniprot.org/uniprotkb/search?query=gene:{gene_buscado} AND organism_id:9606 AND reviewed:true&format=json&size=1"
+                    resposta = requests.get(url, timeout=10) 
 
-if gene_buscado:
-    if len(gene_buscado) < 2:
-        st.warning("⚠️ Digite um nome de gene válido com pelo menos 2 letras.")
-    else:
-        with st.spinner("Sincronizando com UniProtKB..."):
-            try:
-                url = f"https://rest.uniprot.org/uniprotkb/search?query=gene:{gene_buscado} AND organism_id:9606 AND reviewed:true&format=json&size=1"
-                resposta = requests.get(url, timeout=10) # Timeout evita que o site trave se a Suíça cair
+                    if resposta.status_code == 200 and len(resposta.json()['results']) > 0:
+                        proteina = resposta.json()['results'][0]
+                        uniprot_id = proteina['primaryAccession']
+                        sequencia_selvagem = proteina['sequence']['value']
 
-                if resposta.status_code == 200 and len(resposta.json()['results']) > 0:
-                    proteina = resposta.json()['results'][0]
-                    uniprot_id = proteina['primaryAccession']
-                    sequencia_selvagem = proteina['sequence']['value']
+                        st.success(f"Conexão estabelecida! Alvo: **{gene_buscado}** (Accession: {uniprot_id})")
 
-                    st.success(f"Conexão estabelecida! Alvo: **{gene_buscado}** (Accession: {uniprot_id})")
+                        # --- 1. PAINEL CLÍNICO (SUPERIOR - TELA CHEIA) ---
+                        st.subheader("📊 Perfil Mutacional Clínico")
+                        mutacoes_filtradas = df_mutacoes[df_mutacoes['Gene'].str.upper() == gene_buscado]
 
-                    # --- 1. PAINEL CLÍNICO (SUPERIOR - TELA CHEIA) ---
-                    st.subheader("📊 Perfil Mutacional Clínico")
-                    mutacoes_filtradas = df_mutacoes[df_mutacoes['Gene'].str.upper() == gene_buscado]
+                        if not mutacoes_filtradas.empty:
+                            st.dataframe(mutacoes_filtradas, use_container_width=True, hide_index=True)
+                            st.markdown("---")
+                            
+                            # --- 2. PAINEL DE SIMULAÇÃO E 3D (INFERIOR - DIVIDIDO) ---
+                            col_controles, col_3d = st.columns([1.2, 1])
 
-                    if not mutacoes_filtradas.empty:
-                        # Tabela ocupa a tela toda
-                        st.dataframe(mutacoes_filtradas, use_container_width=True, hide_index=True)
+                            with col_controles:
+                                st.subheader("⚙️ Configuração da Modelagem")
+                                mutacao_selecionada = st.selectbox("Selecione uma variante para análise 3D:", mutacoes_filtradas['Variante'])
 
-                        st.markdown("---")
-                        
-                        # --- 2. PAINEL DE SIMULAÇÃO E 3D (INFERIOR - DIVIDIDO) ---
-                        col_controles, col_3d = st.columns([1.2, 1])
+                                linha_selecionada = mutacoes_filtradas[mutacoes_filtradas['Variante'] == mutacao_selecionada]
+                                posicao_mutacao = int(linha_selecionada['Posicao'].values[0])
 
-                        with col_controles:
-                            st.subheader("⚙️ Configuração da Modelagem")
-                            mutacao_selecionada = st.selectbox("Selecione uma variante para análise 3D:", mutacoes_filtradas['Variante'])
+                                if len(mutacao_selecionada) >= 8:
+                                    aa_original_3l = mutacao_selecionada[2:5]
+                                    aa_mutado_3l = mutacao_selecionada[-3:]
+                                    aa_orig_1l = MAPA_AMINOACIDOS.get(aa_original_3l, '?')
+                                    aa_mut_1l = MAPA_AMINOACIDOS.get(aa_mutado_3l, '?')
 
-                            linha_selecionada = mutacoes_filtradas[mutacoes_filtradas['Variante'] == mutacao_selecionada]
-                            posicao_mutacao = int(linha_selecionada['Posicao'].values[0])
+                                    if posicao_mutacao <= len(sequencia_selvagem):
+                                        aa_uniprot = sequencia_selvagem[posicao_mutacao - 1]
+                                        
+                                        if aa_uniprot != aa_orig_1l:
+                                            st.warning(f"⚠️ Alerta de Isoforma: A variante espera '{aa_original_3l}' na posição {posicao_mutacao}, mas o UniProt possui '{aa_uniprot}'.")
+                                        
+                                        sequencia_mutada = sequencia_selvagem[:posicao_mutacao - 1] + aa_mut_1l + sequencia_selvagem[posicao_mutacao:]
 
-                            # Validação para evitar erros se a tabela estiver mal formatada
-                            if len(mutacao_selecionada) >= 8:
-                                aa_original_3l = mutacao_selecionada[2:5]
-                                aa_mutado_3l = mutacao_selecionada[-3:]
-                                aa_orig_1l = MAPA_AMINOACIDOS.get(aa_original_3l, '?')
-                                aa_mut_1l = MAPA_AMINOACIDOS.get(aa_mutado_3l, '?')
+                                        if st.button("🚀 Iniciar Modelagem por Homologia (SWISS-MODEL)", use_container_width=True):
+                                            if not token_swiss:
+                                                st.error("Credencial SWISS-MODEL ausente. Insira o Token no menu lateral.")
+                                            else:
+                                                with st.spinner("Enviando requisição (POST) para o servidor..."):
+                                                    token_limpo = "".join(c for c in token_swiss if c.isalnum() or c == '-')
+                                                    headers = {
+                                                        "Authorization": f"Token {token_limpo}",
+                                                        "Content-Type": "application/json"
+                                                    }
+                                                    payload = {
+                                                        "target_sequences": [sequencia_mutada],
+                                                        "project_title": f"GenoStruct_{gene_buscado}_{mutacao_selecionada}"
+                                                    }
 
-                                # Trava de Segurança Biológica (Aviso em vez de Bloqueio Rígido)
-                                if posicao_mutacao <= len(sequencia_selvagem):
-                                    aa_uniprot = sequencia_selvagem[posicao_mutacao - 1]
-                                    
-                                    if aa_uniprot != aa_orig_1l:
-                                        st.warning(f"⚠️ Alerta de Isoforma: A variante clínica espera '{aa_original_3l}' na posição {posicao_mutacao}, mas o UniProt possui '{aa_uniprot}'. A modelagem prosseguirá aplicando a mutação na sequência canônica atual.")
-                                    
-                                    sequencia_mutada = sequencia_selvagem[:posicao_mutacao - 1] + aa_mut_1l + sequencia_selvagem[posicao_mutacao:]
+                                                    try:
+                                                        url_swiss = "https://swissmodel.expasy.org/automodel"
+                                                        resposta_swiss = requests.post(url_swiss, headers=headers, json=payload, timeout=15)
 
-                                    if st.button("🚀 Iniciar Modelagem por Homologia (SWISS-MODEL)", use_container_width=True):
-                                        if not token_swiss:
-                                            st.error("Credencial SWISS-MODEL ausente. Insira o Token no menu lateral.")
-                                        else:
-                                            with st.spinner("Enviando requisição (POST) para o servidor..."):
-                                                # Filtro rigoroso para evitar UnicodeEncodeError
-                                                token_limpo = "".join(c for c in token_swiss if c.isalnum() or c == '-')
-                                                headers = {
-                                                    "Authorization": f"Token {token_limpo}",
-                                                    "Content-Type": "application/json"
-                                                }
-                                                payload = {
-                                                    "target_sequences": [sequencia_mutada],
-                                                    "project_title": f"GenoStruct_{gene_buscado}_{mutacao_selecionada}"
-                                                }
-
-                                                try:
-                                                    url_swiss = "https://swissmodel.expasy.org/automodel"
-                                                    resposta_swiss = requests.post(url_swiss, headers=headers, json=payload, timeout=15)
-
-                                                    if resposta_swiss.status_code in [200, 201, 202]:
-                                                        dados_projeto = resposta_swiss.json()
-                                                        id_projeto = dados_projeto.get('project_id', 'Desconhecido')
-                                                        st.success(f"Submissão autorizada! Job ID: {id_projeto}")
-                                                        st.markdown(f"🔗 [Acompanhar renderização no dashboard oficial](https://swissmodel.expasy.org/interactive/)")
-                                                    else:
-                                                        st.error(f"Erro do Servidor (Código {resposta_swiss.status_code}): Requisição negada.")
-                                                except requests.exceptions.RequestException:
-                                                    st.error("Falha de rede ao tentar conectar com a Suíça.")
+                                                        if resposta_swiss.status_code in [200, 201, 202]:
+                                                            dados_projeto = resposta_swiss.json()
+                                                            id_projeto = dados_projeto.get('project_id', 'Desconhecido')
+                                                            st.success(f"Submissão autorizada! Job ID: {id_projeto}")
+                                                            st.markdown(f"🔗 [Acompanhar renderização no dashboard oficial](https://swissmodel.expasy.org/interactive/)")
+                                                        else:
+                                                            st.error(f"Erro do Servidor (Código {resposta_swiss.status_code}): Requisição negada.")
+                                                    except requests.exceptions.RequestException:
+                                                        st.error("Falha de rede ao tentar conectar com a Suíça.")
+                                    else:
+                                        st.error("Erro: A posição da mutação excede o tamanho da proteína devolvida pelo UniProt.")
                                 else:
-                                    st.error("Erro: A posição da mutação excede o tamanho da proteína devolvida pelo UniProt.")
-                            else:
-                                st.error("Erro de formatação na variante (esperado padrão p.XxxYYYzzz).")
-                        
-                        with col_3d:
-                            st.subheader("🔬 Renderização Estrutural (AlphaFold DB)")
-                            if posicao_mutacao:
-                                with st.spinner("Baixando coordenadas atômicas PDB..."):
-                                    pdb_texto = buscar_pdb_alphafold(uniprot_id)
+                                    st.error("Erro de formatação na variante (esperado padrão p.XxxYYYzzz).")
+                            
+                            with col_3d:
+                                st.subheader("🔬 Renderização Estrutural")
+                                if posicao_mutacao:
+                                    with st.spinner("Baixando coordenadas atômicas PDB..."):
+                                        pdb_texto = buscar_pdb_alphafold(uniprot_id)
 
-                                if pdb_texto:
-                                    st.caption(f"Visualizando modelo selvagem. Resíduo Mutado ({posicao_mutacao}) em vermelho.")
-                                    view = py3Dmol.view(width=450, height=450)
-                                    view.addModel(pdb_texto, 'pdb')
-                                    view.setStyle({'cartoon': {'color': 'lightgray'}})
-                                    view.setStyle({'resi': str(posicao_mutacao)}, {'stick': {'colorscheme': 'redCarbon', 'radius': 0.3}})
-                                    view.zoomTo()
-                                    showmol(view, height=450, width=450)
-                                else:
-                                    st.warning("Modelo estrutural primário indisponível no repositório AlphaFold.")
+                                    if pdb_texto:
+                                        st.caption(f"Visualizando modelo selvagem. Resíduo Mutado ({posicao_mutacao}) em vermelho.")
+                                        view = py3Dmol.view(width=450, height=450)
+                                        view.addModel(pdb_texto, 'pdb')
+                                        view.setStyle({'cartoon': {'color': 'lightgray'}})
+                                        view.setStyle({'resi': str(posicao_mutacao)}, {'stick': {'colorscheme': 'redCarbon', 'radius': 0.3}})
+                                        view.zoomTo()
+                                        showmol(view, height=450, width=450)
+                                    else:
+                                        st.warning("Modelo estrutural primário indisponível no repositório AlphaFold.")
+                        else:
+                            st.info("Nenhuma variante registrada para este alvo no banco de dados local.")
                     else:
-                        st.info("Nenhuma variante registrada para este alvo no banco de dados local.")
-
-                else:
-                    st.error("⚠️ Alvo genômico não reconhecido nos repositórios oficiais.")
-
-            except requests.exceptions.RequestException:
-                st.error("⚠️ Falha de comunicação com os bancos de dados. Verifique sua conexão de rede.")
+                        st.error("⚠️ Alvo genômico não reconhecido nos repositórios oficiais.")
+                except requests.exceptions.RequestException:
+                    st.error("⚠️ Falha de comunicação com os bancos de dados. Verifique sua conexão de rede.")
+else:
+    st.info("Por favor, selecione um arquivo no menu lateral para iniciar.")
