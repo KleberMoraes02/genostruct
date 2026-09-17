@@ -15,13 +15,37 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- DICIONÁRIO DE APOIO ---
+# --- DICIONÁRIO E GLOSSÁRIO DE APOIO ---
 MAPA_AMINOACIDOS = {
     'Ala': 'A', 'Arg': 'R', 'Asn': 'N', 'Asp': 'D', 'Cys': 'C',
     'Gln': 'Q', 'Glu': 'E', 'Gly': 'G', 'His': 'H', 'Ile': 'I',
     'Leu': 'L', 'Lys': 'K', 'Met': 'M', 'Phe': 'F', 'Pro': 'P',
     'Ser': 'S', 'Thr': 'T', 'Trp': 'W', 'Tyr': 'Y', 'Val': 'V'
 }
+
+# NOVO: Dados completos para o Glossário de Aminoácidos
+DADOS_GLOSSARIO = [
+    {"Aminoácido": "Alanina", "Sigla": "Ala", "Letra": "A", "Propriedade": "Apolar"},
+    {"Aminoácido": "Arginina", "Sigla": "Arg", "Letra": "R", "Propriedade": "Básico (+)"},
+    {"Aminoácido": "Asparagina", "Sigla": "Asn", "Letra": "N", "Propriedade": "Polar não carregado"},
+    {"Aminoácido": "Ácido Aspártico", "Sigla": "Asp", "Letra": "D", "Propriedade": "Ácido (-)"},
+    {"Aminoácido": "Cisteína", "Sigla": "Cys", "Letra": "C", "Propriedade": "Polar não carregado"},
+    {"Aminoácido": "Glutamina", "Sigla": "Gln", "Letra": "Q", "Propriedade": "Polar não carregado"},
+    {"Aminoácido": "Ácido Glutâmico", "Sigla": "Glu", "Letra": "E", "Propriedade": "Ácido (-)"},
+    {"Aminoácido": "Glicina", "Sigla": "Gly", "Letra": "G", "Propriedade": "Apolar"},
+    {"Aminoácido": "Histidina", "Sigla": "His", "Letra": "H", "Propriedade": "Básico (+)"},
+    {"Aminoácido": "Isoleucina", "Sigla": "Ile", "Letra": "I", "Propriedade": "Apolar"},
+    {"Aminoácido": "Leucina", "Sigla": "Leu", "Letra": "L", "Propriedade": "Apolar"},
+    {"Aminoácido": "Lisina", "Sigla": "Lys", "Letra": "K", "Propriedade": "Básico (+)"},
+    {"Aminoácido": "Metionina", "Sigla": "Met", "Letra": "M", "Propriedade": "Apolar"},
+    {"Aminoácido": "Fenilalanina", "Sigla": "Phe", "Letra": "F", "Propriedade": "Apolar / Aromático"},
+    {"Aminoácido": "Prolina", "Sigla": "Pro", "Letra": "P", "Propriedade": "Apolar"},
+    {"Aminoácido": "Serina", "Sigla": "Ser", "Letra": "S", "Propriedade": "Polar não carregado"},
+    {"Aminoácido": "Treonina", "Sigla": "Thr", "Letra": "T", "Propriedade": "Polar não carregado"},
+    {"Aminoácido": "Triptofano", "Sigla": "Trp", "Letra": "W", "Propriedade": "Apolar / Aromático"},
+    {"Aminoácido": "Tirosina", "Sigla": "Tyr", "Letra": "Y", "Propriedade": "Polar não carregado / Aromático"},
+    {"Aminoácido": "Valina", "Sigla": "Val", "Letra": "V", "Propriedade": "Apolar"}
+]
 
 # --- FUNÇÃO DE DADOS ---
 @st.cache_data(show_spinner=False)
@@ -58,7 +82,13 @@ def buscar_pdb_alphafold(uniprot_id):
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/3022/3022421.png", width=60)
     st.title("GenoStruct")
-    st.caption("v1.5.1 (Automação com Fallback)")
+    st.caption("v1.6.0 (pLDDT & Glossário Bioquímico)")
+    st.markdown("---")
+    
+    # NOVO: GLOSSÁRIO EMBUTIDO NA BARRA LATERAL
+    with st.expander("📚 Glossário de Aminoácidos"):
+        st.dataframe(pd.DataFrame(DADOS_GLOSSARIO), hide_index=True, use_container_width=True)
+    
     st.markdown("---")
     st.markdown("**⚙️ Credenciais de Modelagem**")
     token_swiss = st.text_input("SWISS-MODEL API Token:", type="password")
@@ -203,7 +233,6 @@ if not df_mutacoes.empty:
                                                     if resposta_swiss.status_code in [200, 201, 202]:
                                                         id_projeto = resposta_swiss.json().get('project_id')
                                                         
-                                                        # NOVO: Mostrando o link oficial como plano B
                                                         st.success(f"Submissão autorizada! Job ID: {id_projeto}")
                                                         st.info("💡 Você pode aguardar a automação carregar abaixo **OU** clicar no link para ver direto no site suíço.")
                                                         st.markdown(f"🔗 **[Acompanhar renderização no dashboard oficial do SWISS-MODEL](https://swissmodel.expasy.org/interactive/)**")
@@ -262,7 +291,8 @@ if not df_mutacoes.empty:
                                     view_mut = py3Dmol.view(width=450, height=450)
                                     view_mut.addModel(st.session_state['pdb_mutante'], 'pdb')
                                     view_mut.setStyle({'cartoon': {'color': 'lightblue'}})
-                                    view_mut.setStyle({'resi': str(posicao_mutacao)}, {'stick': {'colorscheme': 'redCarbon', 'radius': 0.3}})
+                                    # Alterado para Verde (GreenCarbon) para padronizar com a visualização selvagem
+                                    view_mut.setStyle({'resi': str(posicao_mutacao)}, {'stick': {'colorscheme': 'greenCarbon', 'radius': 0.3}})
                                     view_mut.zoomTo()
                                     showmol(view_mut, height=450, width=450)
                                     
@@ -279,10 +309,18 @@ if not df_mutacoes.empty:
                                     with st.spinner("Baixando coordenadas PDB..."):
                                         pdb_texto = buscar_pdb_alphafold(uniprot_id)
                                     if pdb_texto:
+                                        # NOVO: Legenda explicativa do pLDDT
+                                        st.caption(f"Coloração pLDDT (Confiança da IA): 🟦 Alta | ⬜ Média | 🟥 Baixa. Resíduo Mutado ({posicao_mutacao}) em 🟩 Verde.")
+                                        
                                         view = py3Dmol.view(width=450, height=450)
                                         view.addModel(pdb_texto, 'pdb')
-                                        view.setStyle({'cartoon': {'color': 'lightgray'}})
-                                        view.setStyle({'resi': str(posicao_mutacao)}, {'stick': {'colorscheme': 'redCarbon', 'radius': 0.3}})
+                                        
+                                        # NOVO: Estilo visual avançado usando o B-factor (pLDDT) do AlphaFold (Gradiente Red-White-Blue)
+                                        view.setStyle({'cartoon': {'colorscheme': {'prop': 'b', 'gradient': 'rwb', 'min': 50, 'max': 100}}})
+                                        
+                                        # O aminoácido mutado agora fica em verde neon (greenCarbon) para contrastar com o vermelho/azul
+                                        view.setStyle({'resi': str(posicao_mutacao)}, {'stick': {'colorscheme': 'greenCarbon', 'radius': 0.3}})
+                                        
                                         view.zoomTo()
                                         showmol(view, height=450, width=450)
                                         
