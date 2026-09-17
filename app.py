@@ -80,9 +80,28 @@ if not df_mutacoes.empty:
 
                         st.success(f"Conexão estabelecida! Alvo: **{gene_buscado}** (Accession: {uniprot_id})")
 
-                        # --- 1. PAINEL CLÍNICO (TELA CHEIA) ---
-                        st.subheader("📊 Perfil Mutacional Clínico")
-                        mutacoes_filtradas = df_mutacoes[df_mutacoes['Gene'].str.upper() == gene_buscado]
+                        # --- NOVO: DICIONÁRIO DE COLUNAS (Sanfona) ---
+                        with st.expander("📖 Dicionário de Colunas (Clique para expandir)"):
+                            st.markdown("""
+                            Este guia explica os dados genômicos, clínicos e preditivos exibidos na tabela abaixo.
+                            
+                            **Identificação e Genética:**
+                            - **Gene:** Símbolo oficial aprovado pelo comitê HGNC.
+                            - **HGNC_ID:** Identificador numérico único do gene.
+                            - **UniProt_Accession:** Código do gene no banco mundial de proteínas (UniProt).
+                            - **rsID:** Identificador universal da variante no banco dbSNP (Reference SNP cluster ID).
+                            
+                            **Nomenclatura (Padrão HGVS):**
+                            - **HGVS_c:** Alteração no nível do DNA (sequência codificante). *Ex: c.2219C>T (Citosina trocada por Timina).*
+                            - **HGVS_p / Variante:** Alteração no nível da Proteína. *Ex: p.Ser740Phe (Serina trocada por Fenilalanina na posição 740).*
+                            - **Posicao:** A posição numérica exata do aminoácido afetado na cadeia proteica.
+                            
+                            **Predição e Relevância Clínica:**
+                            - **AlphaMissense_Class:** Inteligência artificial do Google DeepMind que prevê se a mutação é Patogênica, Benigna ou Ambígua.
+                            - **ClinVar:** Registro de relevância clínica real observada em pacientes médicos.
+                            - **Frequency (gnomAD):** A frequência com que esta mutação ocorre na população mundial geral.
+                            """)
+                        # ---------------------------------------------
 
                         if not mutacoes_filtradas.empty:
                             
