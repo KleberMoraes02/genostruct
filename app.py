@@ -59,7 +59,7 @@ def buscar_pdb_alphafold(uniprot_id):
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/3022/3022421.png", width=60)
     st.title("GenoStruct")
-    st.caption("v1.2.2 (Estatísticas por Gene)")
+    st.caption("v1.4.0 (Exportação e Gráficos Avançados)")
     st.markdown("---")
     st.markdown("**⚙️ Credenciais de Modelagem**")
     token_swiss = st.text_input("SWISS-MODEL API Token:", type="password")
@@ -91,30 +91,19 @@ if not df_mutacoes.empty:
 
                         st.success(f"Conexão estabelecida! Alvo: **{gene_buscado}** (Accession: {uniprot_id})")
 
-                        # Separa apenas as mutações do gene pesquisado
                         mutacoes_filtradas = df_mutacoes[df_mutacoes['Gene'].str.upper() == gene_buscado]
 
                         st.subheader("📊 Perfil Mutacional Clínico")
 
                         with st.expander("📖 Dicionário de Colunas (Clique para expandir)"):
                             st.markdown("""
-                            Este guia explica os dados genômicos, clínicos e preditivos exibidos na tabela abaixo.
-                            
-                            **Identificação e Genética:**
+                            Este guia explica os dados genômicos, clínicos e preditivos.
                             - **Gene:** Símbolo oficial aprovado pelo comitê HGNC.
-                            - **HGNC_ID:** Identificador numérico único do gene.
-                            - **UniProt_Accession:** Código do gene no banco mundial de proteínas (UniProt).
-                            - **rsID:** Identificador universal da variante no banco dbSNP.
-                            
-                            **Nomenclatura (Padrão HGVS):**
-                            - **HGVS_c:** Alteração no nível do DNA (sequência codificante).
                             - **HGVS_p / Variante:** Alteração no nível da Proteína.
-                            - **Posicao:** A posição numérica exata do aminoácido afetado na cadeia proteica.
-                            
-                            **Predição e Relevância Clínica:**
-                            - **AlphaMissense_Class:** Inteligência artificial do Google DeepMind que prevê se a mutação é Patogênica, Benigna ou Ambígua.
-                            - **ClinVar:** Registro de relevância clínica real observada em pacientes médicos.
-                            - **Link_gnomAD:** Link direto para consultar a frequência da mutação na população mundial (banco gnomAD).
+                            - **Posicao:** Posição exata do aminoácido afetado.
+                            - **AlphaMissense_Class:** Inteligência artificial do Google DeepMind (Patogênica, Benigna ou Ambígua).
+                            - **ClinVar:** Registro de relevância clínica real observada em pacientes.
+                            - **Link_gnomAD:** Link direto para consultar a frequência da mutação mundialmente.
                             """)
 
                         if not mutacoes_filtradas.empty:
@@ -123,7 +112,7 @@ if not df_mutacoes.empty:
                             colunas_padrao = [c for c in colunas_padrao if c in todas_as_colunas]
 
                             colunas_selecionadas = st.multiselect(
-                                "Selecione as colunas que deseja visualizar na tabela:",
+                                "Selecione as colunas:",
                                 options=todas_as_colunas,
                                 default=colunas_padrao
                             )
@@ -135,17 +124,60 @@ if not df_mutacoes.empty:
                                 configuracao_colunas['Link_gnomAD'] = st.column_config.LinkColumn("🔗 Frequência (gnomAD)", display_text="Ver Variante")
 
                             st.dataframe(df_exibicao, use_container_width=True, hide_index=True, column_config=configuracao_colunas)
+                            
+                            # ==========================================
+                            # NOVO: BOTÃO DE DOWNLOAD DA TABELA (TSV)
+                            # ==========================================
+                            # Converte a tabela filtrada para CSV separado por TAB (.tsv)
+                            csv_data = df_exibicao.to_csv(sep='\t', index=False).encode('utf-8')
+                            st.download_button(
+                                label="📥 Exportar Tabela Curada (.tsv)",
+                                data=csv_data,
+                                file_name=f"GenoStruct_{gene_buscado}_variantes.tsv",
+                                mime="text/tsv",
+                            )
+                            # ==========================================
+
                             st.markdown("---")
                             
                             # ==========================================
-                            # NOVO: ESTATÍSTICAS ESPECÍFICAS DO GENE
+                            # NOVO: GRÁFICO DE DISPERSÃO (Substituto do Lollipop)
                             # ==========================================
+                            st.subheader("📍 Paisagem Mutacional (Mapeamento de Patogenicidade)")
+                            if 'AlphaMissense_Class' in mutacoes_filtradas.columns and 'Posicao' in mutacoes_filtradas.columns:
+                                cores_am = {
+                                    'likely_pathogenic': '#ff4b4b',
+                                    'likely_benign': '#1f77b4',
+                                    'ambiguous': '#ffc107',
+                                    'Não disponível': '#d3d3d3'
+                                }
+                                
+                                # Gráfico Scatter: Eixo X é a posição da proteína, Eixo Y é a Classificação
+                                fig_scatter = px.scatter(
+                                    mutacoes_filtradas, 
+                                    x='Posicao', 
+                                    y='AlphaMissense_Class', 
+                                    color='AlphaMissense_Class',
+                                    color_discrete_map=cores_am,
+                                    hover_data=['Variante', 'Troca', 'ClinVar'], # O que aparece ao passar o mouse
+                                    title=f"Distribuição de Variantes ao longo da proteína {gene_buscado}",
+                                    labels={'Posicao': 'Posição do Aminoácido', 'AlphaMissense_Class': 'Predição AlphaMissense'}
+                                )
+                                # Melhora o visual das bolinhas
+                                fig_scatter.update_traces(marker=dict(size=10, line=dict(width=1, color='DarkSlateGrey')))
+                                st.plotly_chart(fig_scatter, use_container_width=True)
+                            else:
+                                st.info("Colunas de Posição e AlphaMissense necessárias para gerar a Paisagem Mutacional.")
+                            # ==========================================
+                            
+                            st.markdown("---")
+                            
+                            # ESTATÍSTICAS ESPECÍFICAS DO GENE (Gráficos Anteriores)
                             st.subheader(f"📈 Estatísticas Mutacionais para o Alvo: {gene_buscado}")
                             col_graf_1, col_graf_2 = st.columns(2)
                             
                             with col_graf_1:
                                 if 'ClinVar' in mutacoes_filtradas.columns:
-                                    # Gráfico de Barras contando os tipos de registros no ClinVar
                                     cv_counts = mutacoes_filtradas['ClinVar'].value_counts().reset_index()
                                     cv_counts.columns = ['Status ClinVar', 'Quantidade']
                                     fig_bar = px.bar(cv_counts, x='Status ClinVar', y='Quantidade', 
@@ -155,23 +187,14 @@ if not df_mutacoes.empty:
                                     
                             with col_graf_2:
                                 if 'AlphaMissense_Class' in mutacoes_filtradas.columns:
-                                    # Gráfico de Rosquinha do AlphaMissense usando os rótulos reais revelados na imagem
                                     am_counts = mutacoes_filtradas['AlphaMissense_Class'].value_counts().reset_index()
                                     am_counts.columns = ['Classificação', 'Total']
-                                    
-                                    cores_am = {
-                                        'likely_pathogenic': '#ff4b4b', # Vermelho (Patogênico)
-                                        'likely_benign': '#1f77b4',     # Azul (Benigno)
-                                        'ambiguous': '#ffc107',         # Amarelo (Ambíguo)
-                                        'Não disponível': '#d3d3d3'     # Cinza (Sem predição)
-                                    }
                                     fig_pie = px.pie(am_counts, names='Classificação', values='Total', hole=0.4, 
                                                      title="Predição de Impacto (AlphaMissense)",
                                                      color='Classificação', color_discrete_map=cores_am)
                                     st.plotly_chart(fig_pie, use_container_width=True)
 
                             st.markdown("---")
-                            # ==========================================
                             
                             col_controles, col_3d = st.columns([1.2, 1])
 
@@ -198,9 +221,9 @@ if not df_mutacoes.empty:
 
                                         if st.button("🚀 Iniciar Modelagem por Homologia (SWISS-MODEL)", use_container_width=True):
                                             if not token_swiss:
-                                                st.error("Credencial SWISS-MODEL ausente. Insira o Token no menu lateral.")
+                                                st.error("Credencial SWISS-MODEL ausente no menu lateral.")
                                             else:
-                                                with st.spinner("Enviando requisição (POST) para o servidor..."):
+                                                with st.spinner("Autenticando e enviando requisição..."):
                                                     token_limpo = "".join(c for c in token_swiss if c.isalnum() or c == '-')
                                                     headers = {"Authorization": f"Token {token_limpo}", "Content-Type": "application/json"}
                                                     payload = {"target_sequences": [sequencia_mutada], "project_title": f"GenoStruct_{gene_buscado}_{mutacao_selecionada}"}
@@ -210,18 +233,17 @@ if not df_mutacoes.empty:
                                                         resposta_swiss = requests.post(url_swiss, headers=headers, json=payload, timeout=15)
 
                                                         if resposta_swiss.status_code in [200, 201, 202]:
-                                                            dados_projeto = resposta_swiss.json()
-                                                            id_projeto = dados_projeto.get('project_id', 'Desconhecido')
-                                                            st.success(f"Submissão autorizada! Job ID: {id_projeto}")
+                                                            id_projeto = resposta_swiss.json().get('project_id', 'Desconhecido')
+                                                            st.success(f"Job ID: {id_projeto}")
                                                             st.markdown(f"🔗 [Acompanhar renderização no dashboard oficial](https://swissmodel.expasy.org/interactive/)")
                                                         else:
-                                                            st.error(f"Erro do Servidor (Código {resposta_swiss.status_code}): Requisição negada.")
+                                                            st.error(f"Erro do Servidor (Código {resposta_swiss.status_code})")
                                                     except requests.exceptions.RequestException:
                                                         st.error("Falha de rede ao tentar conectar com a Suíça.")
                                     else:
-                                        st.error("Erro: A posição da mutação excede o tamanho da proteína devolvida pelo UniProt.")
+                                        st.error("Erro: Posição excede o tamanho da proteína.")
                                 else:
-                                    st.error("Erro de formatação na variante (esperado padrão p.XxxYYYzzz).")
+                                    st.error("Erro de formatação na variante.")
                             
                             with col_3d:
                                 st.subheader("🔬 Renderização Estrutural")
@@ -230,20 +252,31 @@ if not df_mutacoes.empty:
                                         pdb_texto = buscar_pdb_alphafold(uniprot_id)
 
                                     if pdb_texto:
-                                        st.caption(f"Visualizando modelo selvagem. Resíduo Mutado ({posicao_mutacao}) em vermelho.")
+                                        st.caption(f"Resíduo Mutado ({posicao_mutacao}) em vermelho.")
                                         view = py3Dmol.view(width=450, height=450)
                                         view.addModel(pdb_texto, 'pdb')
                                         view.setStyle({'cartoon': {'color': 'lightgray'}})
                                         view.setStyle({'resi': str(posicao_mutacao)}, {'stick': {'colorscheme': 'redCarbon', 'radius': 0.3}})
                                         view.zoomTo()
                                         showmol(view, height=450, width=450)
+                                        
+                                        # ==========================================
+                                        # NOVO: BOTÃO DE DOWNLOAD DO PDB SELVAGEM
+                                        # ==========================================
+                                        st.download_button(
+                                            label="📥 Exportar Estrutura Selvagem (.pdb)",
+                                            data=pdb_texto,
+                                            file_name=f"AlphaFold_WildType_{uniprot_id}.pdb",
+                                            mime="chemical/x-pdb",
+                                        )
+                                        # ==========================================
                                     else:
-                                        st.warning("Modelo estrutural primário indisponível no repositório AlphaFold.")
+                                        st.warning("Modelo primário indisponível no AlphaFold.")
                         else:
-                            st.info("Nenhuma variante registrada para este alvo no banco de dados local.")
+                            st.info("Nenhuma variante registrada no banco local.")
                     else:
-                        st.error("⚠️ Alvo genômico não reconhecido nos repositórios oficiais.")
+                        st.error("⚠️ Alvo não reconhecido.")
                 except requests.exceptions.RequestException:
-                    st.error("⚠️ Falha de comunicação com os bancos de dados. Verifique sua conexão de rede.")
+                    st.error("⚠️ Falha de rede.")
 else:
-    st.info("Arquivo de banco de dados não encontrado na pasta 'dados'.")
+    st.info("Banco de dados não encontrado.")
