@@ -58,7 +58,7 @@ def buscar_pdb_alphafold(uniprot_id):
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/3022/3022421.png", width=60)
     st.title("GenoStruct")
-    st.caption("v1.5.0 (IA Biológica e Automação)")
+    st.caption("v1.5.1 (Automação com Fallback)")
     st.markdown("---")
     st.markdown("**⚙️ Credenciais de Modelagem**")
     token_swiss = st.text_input("SWISS-MODEL API Token:", type="password")
@@ -87,7 +87,6 @@ if not df_mutacoes.empty:
                         uniprot_id = proteina['primaryAccession']
                         sequencia_selvagem = proteina['sequence']['value']
                         
-                        # NOVO: EXTRAINDO MAPA DE CARACTERÍSTICAS DA PROTEÍNA
                         mapa_funcional = proteina.get('features', [])
 
                         st.success(f"Conexão estabelecida! Alvo: **{gene_buscado}** (Accession: {uniprot_id})")
@@ -134,7 +133,6 @@ if not df_mutacoes.empty:
 
                             st.markdown("---")
                             
-                            # GRÁFICO DE DISPERSÃO
                             st.subheader("📍 Paisagem Mutacional (Mapeamento de Patogenicidade)")
                             if 'AlphaMissense_Class' in mutacoes_filtradas.columns and 'Posicao' in mutacoes_filtradas.columns:
                                 cores_am = {'likely_pathogenic': '#ff4b4b', 'likely_benign': '#1f77b4', 'ambiguous': '#ffc107', 'Não disponível': '#d3d3d3'}
@@ -144,14 +142,12 @@ if not df_mutacoes.empty:
                             
                             st.markdown("---")
                             
-                            # CONTROLES E ESTRUTURA 3D
                             col_controles, col_3d = st.columns([1.2, 1])
 
                             with col_controles:
                                 st.subheader("⚙️ Configuração da Modelagem")
                                 mutacao_selecionada = st.selectbox("Selecione uma variante para análise 3D:", mutacoes_filtradas['Variante'])
                                 
-                                # Limpa o modelo 3D mutado se o usuário trocar de mutação
                                 seletor_mudou = 'ultima_mutacao' not in st.session_state or st.session_state['ultima_mutacao'] != mutacao_selecionada
                                 if seletor_mudou:
                                     st.session_state['pdb_mutante'] = None
@@ -166,7 +162,6 @@ if not df_mutacoes.empty:
                                     aa_orig_1l = MAPA_AMINOACIDOS.get(aa_original_3l, '?')
                                     aa_mut_1l = MAPA_AMINOACIDOS.get(aa_mutado_3l, '?')
 
-                                    # INTELIGÊNCIA BIOLÓGICA (UniProt Features)
                                     is_peptideo_sinal = False
                                     for feature in mapa_funcional:
                                         tipo_alvo = feature.get('type', '')
@@ -174,7 +169,6 @@ if not df_mutacoes.empty:
                                             inicio = int(feature['location']['start']['value'])
                                             fim = int(feature['location']['end']['value'])
                                             
-                                            # Verifica se a mutação caiu no meio dessa característica
                                             if inicio <= posicao_mutacao <= fim:
                                                 if tipo_alvo == 'Signal':
                                                     is_peptideo_sinal = True
@@ -194,7 +188,6 @@ if not df_mutacoes.empty:
                                         
                                         sequencia_mutada = sequencia_selvagem[:posicao_mutacao - 1] + aa_mut_1l + sequencia_selvagem[posicao_mutacao:]
 
-                                        # AUTOMAÇÃO DO SWISS-MODEL
                                         if st.button("🚀 Iniciar Automação SWISS-MODEL", use_container_width=True):
                                             if not token_swiss:
                                                 st.error("Credencial SWISS-MODEL ausente no menu lateral.")
@@ -210,7 +203,11 @@ if not df_mutacoes.empty:
                                                     if resposta_swiss.status_code in [200, 201, 202]:
                                                         id_projeto = resposta_swiss.json().get('project_id')
                                                         
-                                                        # Interface de carregamento dinâmico
+                                                        # NOVO: Mostrando o link oficial como plano B
+                                                        st.success(f"Submissão autorizada! Job ID: {id_projeto}")
+                                                        st.info("💡 Você pode aguardar a automação carregar abaixo **OU** clicar no link para ver direto no site suíço.")
+                                                        st.markdown(f"🔗 **[Acompanhar renderização no dashboard oficial do SWISS-MODEL](https://swissmodel.expasy.org/interactive/)**")
+                                                        
                                                         painel_status = st.empty()
                                                         barra_progresso = st.progress(0)
                                                         
@@ -218,7 +215,6 @@ if not df_mutacoes.empty:
                                                         status = "PENDING"
                                                         tentativas = 0
                                                         
-                                                        # LOOP DE ESPERA (Consulta a cada 10s. Máx 3 min)
                                                         while status in ["PENDING", "RUNNING", "QUEUED"] and tentativas < 18:
                                                             time.sleep(10)
                                                             tentativas += 1
@@ -238,19 +234,21 @@ if not df_mutacoes.empty:
                                                                         painel_status.success("✅ Modelagem Concluída!")
                                                                         barra_progresso.progress(100)
                                                                         
-                                                                        # BAIXANDO O ARQUIVO PDB MUTADO AUTOMATICAMENTE
                                                                         url_pdb = f"https://swissmodel.expasy.org/project/{id_projeto}/models/01.pdb"
                                                                         res_pdb = requests.get(url_pdb, headers={"Authorization": f"Token {token_limpo}"}, timeout=10)
                                                                         if res_pdb.status_code == 200:
                                                                             st.session_state['pdb_mutante'] = res_pdb.text
+                                                                        else:
+                                                                            painel_status.error("⚠️ O PDB foi gerado, mas o download automático falhou. Por favor, clique no link oficial acima para baixar manualmente ou tente novamente mais tarde.")
+                                                                            
                                                                     elif status in ["FAILED", "CANCELLED"]:
-                                                                        painel_status.error("❌ A modelagem falhou no servidor do SWISS-MODEL.")
+                                                                        painel_status.error("❌ A modelagem falhou ou foi cancelada pelo servidor. Verifique o link oficial acima ou tente novamente mais tarde.")
                                                                         break
                                                             except:
-                                                                painel_status.error("Falha ao checar status. Tentando novamente...")
+                                                                painel_status.error("⚠️ Falha de conexão ao checar o status. O servidor pode estar instável. Acompanhe pelo link oficial ou tente novamente.")
                                                                 
                                                         if tentativas >= 18:
-                                                            painel_status.error("Tempo limite de 3 minutos excedido. O servidor está lotado.")
+                                                            painel_status.error("⏳ Tempo limite excedido (Servidor lotado). Por favor, clique no link oficial acima para resgatar seu modelo manualmente ou tente novamente mais tarde.")
                                                     else:
                                                         st.error(f"Erro do Servidor (Código {resposta_swiss.status_code})")
                                                 except requests.exceptions.RequestException:
@@ -258,7 +256,6 @@ if not df_mutacoes.empty:
                                     else:
                                         st.error("Posição excede o tamanho da proteína.")
                                 
-                                # SE O DOWNLOAD DEU CERTO, MOSTRA O MUTANTE AQUI NA ESQUERDA
                                 if st.session_state.get('pdb_mutante'):
                                     st.markdown("---")
                                     st.subheader("🔴 Estrutura Mutada (SWISS-MODEL)")
@@ -296,7 +293,6 @@ if not df_mutacoes.empty:
                                             mime="chemical/x-pdb",
                                         )
 
-                        # AQUI ESTÃO AS LINHAS QUE TINHAM SIDO CORTADAS:
                         else:
                             st.info("Nenhuma variante registrada no banco local para este gene.")
                     else:
